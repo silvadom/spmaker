@@ -13,6 +13,12 @@ flexible archichture that can be easy deployed on multi exchanges or brokers
 
 * Binance
 
+##### BUILD Dependencies
+
+[Linux](BUILD_LIBRARIES_LINUX.md)
+
+[Windows](BUILD_LIBRARIES_WIN.md)
+
 ##### BUILD SPMAKER
 
 ```
