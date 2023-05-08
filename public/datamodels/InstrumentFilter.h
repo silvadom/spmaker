@@ -104,6 +104,9 @@ inline std::ostream & operator<<(std::ostream &out, const Filter& filter)
     return out << std::left 
         << std::setw(16) << filter.instrum
         << std::setw(12) << filter.status
+        << std::setw(8) << filter.tickSize
+        << std::setw(8) << filter.stepSize
+        << std::setw(8) << filter.maxPrice
         << std::setw(5) << filter.pxPrecision
         << std::setw(5) << filter.qtyPrecision
         << std::setw(5) << filter.basePrecision

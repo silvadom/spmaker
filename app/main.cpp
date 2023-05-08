@@ -207,11 +207,11 @@ int main(int argc, char** argv)
                  * @brief Implement vVery simple strategy based on spread
                  * #######################################################
                  */
-                double spread = (ticker.ask - ticker.bid) / iter->tickSize;
+                double spread = (ticker.ask - ticker.bid) * iter->tickSize;
                 
                 // OPENING A POSITION
                 if(!hasPosition && !hitThreadLimit && hasBalance 
-                    && spread >= 3 && !hitRequestLimit)
+                    && spread >= 0.3 && !hitRequestLimit)
                 {
                     ++usedCounter;
                     resetLimitOn = false;
@@ -228,7 +228,7 @@ int main(int argc, char** argv)
                         postOrder["side"] = "BUY";
                         postOrder["posSide"] = "BOTH";
                         postOrder["postOnly"] = true;
-                        postOrder["price"] = (ticker.bid + iter->tickSize); // set 5th best price
+                        postOrder["price"] = (ticker.bid + iter->stepSize); // set 5th best price
                         postOrder["quantity"] = (RISK_CAPITAL / ticker.bid);
                         
                         OrderData order = connector->NewPerpetualOrder(postOrder);
@@ -247,7 +247,7 @@ int main(int argc, char** argv)
                     });
                 }
                 // CLOSING POSITION
-                else if(hasPosition && spread >= 3)
+                else if(hasPosition && spread >= 0.3)
                 {
                     orderLock.Lock();
                     OrderData order = *openingOrders.find(order);
