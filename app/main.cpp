@@ -203,8 +203,8 @@ int main(int argc, char** argv)
                  * @brief Implement vVery simple strategy based on spread
                  * #######################################################
                  */
-                double spread = tickers[j].ask - tickers[j].bid;
-
+                double spread = (ticker.ask - ticker.bid) / ticker.bid * 100.0f;
+                
                 // OPENING A POSITION
                 if(!hasPosition && !hitThreadLimit && hasBalance 
                     && spread >= 0.03 && !hitRequestLimit)
