@@ -1,5 +1,5 @@
 # Build executable called "craftor" that is built from the source files
-SET(TARGET "mmaker") 
+SET(TARGET "spmaker") 
 PROJECT(${TARGET} LANGUAGES CXX) 
 
 # project include directories
