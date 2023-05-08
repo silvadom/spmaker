@@ -1,4 +1,4 @@
-### LOW-LATENCY SPREAD MARKET MAKER
+### Low-latency Spread MARKET MAKER
 
 This simple Spread based MARKET MAKER demonstrate how to develop
 High Frequency trading automation using advanced C++ features and
