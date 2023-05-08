@@ -199,15 +199,19 @@ int main(int argc, char** argv)
                 bool hitThreadLimit = usedCounter > NUM_THREADS;
                 bool hitRequestLimit = connector->IsRequestLimitHit();
 
+                Filter filter;
+                filter.instrum = ticker.instrum;
+                auto iter = filters.find(filter);
+
                 /** ######################################################
                  * @brief Implement vVery simple strategy based on spread
                  * #######################################################
                  */
-                double spread = (ticker.ask - ticker.bid) / ticker.bid * 100.0f;
+                double spread = (ticker.ask - ticker.bid) / iter->tickSize;
                 
                 // OPENING A POSITION
                 if(!hasPosition && !hitThreadLimit && hasBalance 
-                    && spread >= 0.03 && !hitRequestLimit)
+                    && spread >= 3 && !hitRequestLimit)
                 {
                     ++usedCounter;
                     resetLimitOn = false;
@@ -216,10 +220,6 @@ int main(int argc, char** argv)
                     // dispatch create order 5 per request
                     boost::asio::dispatch(pool, [&, ticker]()
                     {
-                        Filter filter;
-                        filter.instrum = ticker.instrum;
-                        auto iter = filters.find(filter);
-
                         // create buy open order
                         Json::Value postOrder;
                         postOrder["instrum"] = ticker.instrum;
@@ -247,7 +247,7 @@ int main(int argc, char** argv)
                     });
                 }
                 // CLOSING POSITION
-                else if(hasPosition && spread >= 0.03)
+                else if(hasPosition && spread >= 3)
                 {
                     orderLock.Lock();
                     OrderData order = *openingOrders.find(order);
