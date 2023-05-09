@@ -218,7 +218,6 @@ int main(int argc, char** argv)
                 if(!hitThreadLimit && hasBalance && spread >= 0.002 && !hitRequestLimit)
                 {
                     ++usedCounter;
-                    resetLimitOn = false;
 
                     // dispatch create order 5 per request
                     boost::asio::dispatch(pool, [&, ticker]()
