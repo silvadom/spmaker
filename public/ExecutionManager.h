@@ -92,7 +92,7 @@ public:
             for(const std::string id: positionsOrderIds.at(instrum))
             {
                 OrderData order;
-                order.id = *positionsOrderIds.at(instrum).begin();
+                order.id = id;
                 auto it = postOders.find(order);
                 if(it != postOders.end())
                     orders.insert(*it);
