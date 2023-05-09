@@ -20,6 +20,8 @@ public:
         dispatcherMap["FILLED1"] = (pfunct)&ExecutionManager::UpdateClosedPosition;
         dispatcherMap["CANCELED0"] = (pfunct)&ExecutionManager::UpdateCancelOpening;
         dispatcherMap["CANCELED1"] = (pfunct)&ExecutionManager::UpdateCancelClosing;
+        dispatcherMap["EXPIRED0"] = (pfunct)&ExecutionManager::UpdateCancelOpening;
+        dispatcherMap["EXPIRED1"] = (pfunct)&ExecutionManager::UpdateCancelClosing;
     }
 
     virtual ~ExecutionManager() {}
@@ -30,8 +32,11 @@ public:
         event.append(primary.state);
         event.append(std::to_string((int)primary.closePosition));
 
-        pfunct caller = dispatcherMap[event];
-        (this->*caller)(primary, secondary);
+        if(dispatcherMap.count(event))
+        {
+            pfunct caller = dispatcherMap[event];
+            (this->*caller)(primary, secondary);
+        }
     }
 
     void UpdateOpenOrders(const flat_set<OrderData>& orders)
@@ -149,11 +154,13 @@ protected:
     {
         execLock.Lock();
         postOders.insert(order);
-        if(order.state == "FILLED")
-            openOrders.erase(order);
         if(positionsOrderIds.count(order.instrum) == 0)
             positionsOrderIds.emplace(order.instrum, flat_set<std::string>());
         positionsOrderIds.at(order.instrum).insert(order.id);
+        
+        if(order.state == "FILLED")
+            openOrders.erase(order);
+        
         execLock.Unlock();
     }
 
