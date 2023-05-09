@@ -253,8 +253,7 @@ int main(int argc, char** argv)
                     for(const OrderData& order: orders)
                     {
                         // computes position spread using current bid - order entry price
-                        if(order.IsValid())
-                            posPerc = (ticker.bid - order.price) / order.price * 100.0;
+                        posPerc = (ticker.bid - order.price) / order.price * 100.0;
 
                         if((spread >= 0.002 || std::abs(posPerc) > 0.003) && 
                             !execManager.IsClosingRequested(order))
@@ -322,6 +321,9 @@ int main(int argc, char** argv)
                 {
                     execManager.Update(order, order);
                 });
+
+                if(order.closePosition && order.state == "FILLED")
+                    USED_CAPITAL -= RISK_CAPITAL;
 
                 LOG_IF(INFO, verbosity > 0) << order;
             }
