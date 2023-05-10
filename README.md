@@ -38,6 +38,7 @@ cmake . -DG3LOG_ROOT=/usr/local/g3log -DJSON_ROOT=/usr/local/json
 ```
 
 With visual studio 2019 or 2022
+
     * Open solution qcraftor.sln 
     * set Solution Configuration to "RelWithdebugInfo"
 
