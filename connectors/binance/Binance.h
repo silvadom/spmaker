@@ -1,183 +1,468 @@
 #pragma once
 
-#include "public/IExchange.h"
-#include "public/ConnHandler.h"
-#include "public/AuthUtils.h"
+#define _WEBSOCKETPP_CPP11_STL_
+#define BOOST_BIND_GLOBAL_PLACEHOLDERS
+
+#include <ctime>
+#include <set>
+#include <string>
+#include <thread>
+#include <tuple>
+#include <random>
+#include <functional>
+#include <unordered_map>
+#include <json/json.h>
+#include <concurrentqueue.h>
+#include <cpr/cpr.h>
+#include <websocketpp/endpoint.hpp>
+#include <websocketpp/connection.hpp>
+#include <websocketpp/config/asio_client.hpp>
+#include <websocketpp/client.hpp>
+#include <boost/container/flat_map.hpp>
+#include <boost/container/flat_set.hpp>
+#include "datamodels/InstrumentFilter.h"
+#include "datamodels/PriceData.h"
+#include "datamodels/CandleData.h"
+#include "datamodels/OrderData.h"
+#include "datamodels/PositionData.h"
+#include "datamodels/BalanceData.h"
+#include "datamodels/TickerData.h"
+
+using namespace moodycamel;
+using namespace boost::container;
 
 namespace stelgic
 {
-class Binance : public IExchange
+using WebClient=websocketpp::client<websocketpp::config::asio_tls_client>;
+using ContextPtr=websocketpp::lib::shared_ptr<websocketpp::lib::asio::ssl::context>;
+using ThreadPtr = websocketpp::lib::shared_ptr<websocketpp::lib::thread>;
+using StrMap = std::unordered_map<std::string, std::string>;
+using StrPair = std::pair<std::string, std::string>;
+using IntStrPair = std::pair<int, std::string>;
+using MessageQueue = ConcurrentQueue<std::pair<std::string, std::string>>;
+
+enum class ConnState 
 {
-public:
-    Binance(const Binance &other) = default;
-    Binance &operator=(const Binance &other) = default;
+    Opening=0, Opened, Closed, Failed, Invalid, Abnormal
+};
+
+enum class LiveState 
+{
+    Started=0, Running, Paused, Stopped
+};
+
+class IExchange
+{
+protected:
+    /**
+     * @brief Construct a new IExchange object
+     * 
+     */
+    IExchange() {};
+
+    /**
+     * @brief Construct a new IExchange object from existent one
+     * 
+     * @param other 
+     */
+    IExchange(const IExchange& other) = default;
+
+    /**
+     * @brief Make a copy IExchange to new one
+     * 
+     * @param other 
+     * @return IExchange& 
+     */
+    IExchange& operator=(const IExchange& other) = default;
 
 public:
-    Binance();
-    virtual ~Binance();
+    /**
+     * @brief Destroy the IExchange object
+     * 
+     */
+    virtual ~IExchange() = default;
 
-    void Init(const Json::Value& params, int logLevel) override;
-    void Close() override;
-    void Stop() override;
-    void Reconnect() override;
-    bool IsInitialized() override;
-    bool IsOnline() override;
-    bool IsRequestLimitHit() override;
-    bool ResetRequestLimitTimer(int millis) override;
-    void TestConnectivity() override;
+    /**
+     * @brief this method should be called before connect.
+     * It does required websocket initializations
+     * 
+     * @param params 
+     * @param logLevel 
+     */
+    virtual void Init(const Json::Value& params, int logLevel) = 0;
 
-    flat_set<Filter>& GetFilters() override;
-    Json::Value& GetConfiguration() override;
-    void* GetMessageQueue(const std::string& tag) override;
+    /**
+     * @brief close websocket connection
+     * 
+     */
+    virtual void Close() = 0;
 
-    ConnState Connect(const Json::Value &params) override;
+    /**
+     * @brief 
+     * 
+     */
+    virtual void Stop() = 0;
 
-    bool Subscribe(const std::string &key,
-                   const std::string& market,
-                   const Json::Value &symbols,
-                   const Json::Value &channels,
-                   std::string privacy="public") override;
+    /**
+     * @brief - modify to reconnect to specific connection
+     * 
+     */
+    virtual void Reconnect() = 0;
 
-    bool Subscribe(const Json::Value& params) override;
-    bool Send(const std::string &key, const std::string &message) override;
-    bool SendKeepAlive(const std::string &key) override;
+    /**
+     * @brief 
+     * 
+     * @return true 
+     * @return false 
+     */
+    virtual bool IsInitialized() = 0;
 
-    // get account details
-    Json::Value GetMarketInfo(const std::string& assetClass) override;
-    flat_set<BalanceData> GetSpotAccountBalances(const std::set<std::string>& currencies) override;
-    flat_set<BalanceData> GetPerpetualAccountBalances(const std::set<std::string>& currencies) override;
-    flat_set<BalanceData> GetOptionAccountBalances(const std::set<std::string>& currencies) override;
+    /**
+     * @brief - if true realtime connection has been established with this exchange
+     * 
+     * @return true 
+     * @return false 
+     */
+    virtual bool IsOnline() = 0;
 
-    // new orders
-    bool BuildNewOrder(const Json::Value &params, cpr::Payload& payload) override;
-    bool BuildNewOrder(const Json::Value &params, Json::Value& payload) override;
-    OrderData NewSpotOrder(const Json::Value &params, bool isdummy=false) override;
-    OrderData NewPerpetualOrder(const Json::Value &params, bool isdummy=false) override;
-    OrderData NewOptionOrder(const Json::Value &params, bool isdummy=false) override;
+    /**
+     * @brief check where the http request limit is hit
+     * 
+     * @return true 
+     * @return false 
+     */
+    virtual bool IsRequestLimitHit() = 0;
 
-    // place multiple orders
-    flat_set<OrderData> NewSpotBatchOrders(const Json::Value& params) override;
-    flat_set<OrderData> NewPerpetualBatchOrders(const Json::Value& params) override;
+    /**
+     * @brief start a time to reset the limit after n period
+     * 
+     * @param millis 
+     * @return true 
+     * @return false 
+     */
+    virtual bool ResetRequestLimitTimer(int millis) = 0;
 
-    OrderData GetSpotOrder(const std::string &instrum, std::string id="", std::string lid="") override;
-    OrderData GetPerpetualOrder(const std::string& instrum, std::string id="", std::string lid="") override;
-    OrderData GetOptionOrder(const std::string& instrum, std::string id="", std::string lid="") override;
+    /**
+     * @brief compute average time on ping send and pong received
+     * 
+     */
+    virtual void TestConnectivity() = 0;
 
-    flat_set<OrderData> GetPerpetualOpenOrders() override;
+    /**
+     * @brief Get the instrum Filters
+     * 
+     * @return flat_set<Filter>& 
+     */
+    virtual flat_set<Filter>& GetFilters() = 0;
+    
+    /**
+     * @brief Get the Configuration object
+     * 
+     * @return Json::Value& 
+     */
+    virtual Json::Value& GetConfiguration() = 0;
 
-    bool CancelSpotOrder(const std::string &instrum, std::string id="", std::string lid="") override;
-    bool CancelPerpetualOrder(const std::string &instrum, std::string id="", std::string lid="") override;
-    bool CancelOptionOrder(const std::string &instrum, std::string id="", std::string lid="") override;
+    /**
+     * @brief Get the Message Queue object
+     * 
+     * @param tag 
+     * @return void* - must cast to MessageQueue type
+     */
+    virtual void* GetMessageQueue(const std::string& tag) = 0;
 
-    std::vector<StrPair> CancelSpotOrders(const std::vector<StrPair> &params) override;
-    std::vector<StrPair> CancelPerpetualOrders(const std::vector<StrPair> &params) override;
-    std::vector<StrPair> CancelOptionOrders(const std::vector<StrPair> &params) override;
+    /**
+     * @brief - connect to websocket server using credentials
+     * 
+     * @param params - key and websocket endpoint url to subscribe for live data
+     */
+    virtual ConnState Connect(const Json::Value& params) = 0;
 
-    Json::Value GetLastPerpetualTrade(const std::string& instrum, int limit=1) override;
+    /**
+     * @brief - subscribe to websocket stream by channel
+     * 
+     * @param key 
+     * @param market 
+     * @param symbols 
+     * @param channels 
+     * @param privacy public or private endpoint 
+     * @return true 
+     * @return false 
+     */
+    virtual bool Subscribe(const std::string& key,
+                            const std::string& market,
+                            const Json::Value& symbols, 
+                            const Json::Value& channels,
+                            std::string privacy="public") = 0;
 
-    // positions
-    flat_set<PositionData> GetPerpetualPositions(const std::string &instrum, std::string lid="") override;
-    flat_set<PositionData> GetOptionPositions(const std::string& instrum, std::string lid="") override;
+    /**
+     * @brief 
+     * 
+     * @param params 
+     * @return true 
+     * @return false 
+     */
+    virtual bool Subscribe(const Json::Value& params) = 0;
 
-    // live parsing thread
-    std::thread StreamParser(MessageQueue& messageQueue, size_t numThreads=4) override;
-    std::thread KeepAlive() override;
+    /**
+     * @brief send message to server via websocket
+     * 
+     * @param key - given key name to endpoint [public or private]
+     * @param message 
+     * @return true 
+     * @return false 
+     */
+    virtual bool Send(const std::string& key, const std::string& message) = 0;
+    
+    /**
+     * @brief - send ping or keep alive command to server to keep connected
+     *          some server disconnect client at certain period
+     * 
+     * @param key - given key name to cached endpoint [public or private]
+     * @return true - server return success 
+     * @return false - command might or not reach server
+     */
+    virtual bool SendKeepAlive(const std::string& key) = 0;
 
-    // callbacks
-    void BindTradesQueue(ConcurrentQueue<PriceData>* queue) override;
-    void BindCandlesQueue(ConcurrentQueue<CandleData>* queue) override;
-    void BindDepthQueue(ConcurrentQueue<Json::Value>* queue) override;
-    void BindTickerQueue(ConcurrentQueue<TickerData>* queue) override;
-    void BindOrderQueue(ConcurrentQueue<OrderData>* queue) override;
-    void BindPositionQueue(ConcurrentQueue<PositionData>* queue) override;
+    /**
+     * @brief Get Spot, Future or Option Market Info object
+     * 
+     * @param market 
+     * @return Json::Value 
+     */
+    virtual Json::Value GetMarketInfo(const std::string& market) = 0;
+
+    /**
+     * @brief Get the Spot Account Balances object
+     * 
+     * @param currencies 
+     * @return flat_set<BalanceData> 
+     */
+    virtual flat_set<BalanceData> GetSpotAccountBalances(
+        const std::set<std::string>& currencies) = 0;
+    
+    /**
+     * @brief Get the Future Account Balances object
+     * 
+     * @param currencies 
+     * @return flat_set<BalanceData> 
+     */
+    virtual flat_set<BalanceData> GetPerpetualAccountBalances(
+        const std::set<std::string>& currencies) = 0;
+    
+    /**
+     * @brief Get the Option Account Balances object
+     * 
+     * @param currencies 
+     * @return flat_set<BalanceData> 
+     */
+    virtual flat_set<BalanceData> GetOptionAccountBalances( 
+                    const std::set<std::string>& currencies) = 0;
+
+    /**
+     * @brief 
+     * 
+     * @param params 
+     * @param payload 
+     * @return true 
+     * @return false 
+     */
+    virtual bool BuildNewOrder(const Json::Value &params, cpr::Payload& payload) = 0;
+    virtual bool BuildNewOrder(const Json::Value &params, Json::Value& payload) = 0;
+
+    /**
+     * @brief build and send new spot order to exchange
+     * 
+     * @param params
+     * @param isdummy - send test order
+     * @return OrderData 
+     */
+    virtual OrderData NewSpotOrder(const Json::Value& params, bool isdummy=false) = 0;
+
+    /**
+     * @brief build and send new Perpetual/perpectual order to exchange
+     * 
+     * @param params 
+     * @param isdummy - send test order
+     * @return OrderData
+     */
+    virtual OrderData NewPerpetualOrder(const Json::Value& params, bool isdummy=false) = 0;
+
+    /**
+     * @brief build and send new option order to exchange
+     * 
+     * @param params 
+     * @param isdummy - send test order
+     * @return OrderData
+     */
+    virtual OrderData NewOptionOrder(const Json::Value& params, bool isdummy=false) = 0;
+
+    /**
+     * @brief place batch orders
+     * 
+     * @param params 
+     * @return flat_set<OrderData> 
+     */
+    virtual flat_set<OrderData> NewSpotBatchOrders(const Json::Value& params) = 0;
+
+    /**
+     * @brief place batch orders
+     * 
+     * @param params 
+     * @return flat_set<OrderData> 
+     */
+    virtual flat_set<OrderData> NewPerpetualBatchOrders(const Json::Value& params) = 0;
+
+    /**
+     * @brief Query Order from exchange
+     * 
+     * @param instrum 
+     * @param id order Id
+     * @param lid client Order Id
+     * @return OrderData
+     */
+    virtual OrderData GetSpotOrder(const std::string& instrum, std::string id="", std::string lid="") = 0;
+    virtual OrderData GetPerpetualOrder(const std::string& instrum, std::string id="", std::string lid="") = 0;
+    virtual OrderData GetOptionOrder(const std::string& instrum, std::string id="", std::string lid="") = 0;
+
+    /**
+     * @brief Get all open orders
+     * 
+     * @return flat_set<OrderData> 
+     */
+    virtual flat_set<OrderData> GetPerpetualOpenOrders() = 0;
+
+    /**
+     * @brief 
+     * 
+     * @param instrum 
+     * @param id order Id
+     * @param lid client Order Id
+     * @return true 
+     * @return false 
+     */
+    virtual bool CancelSpotOrder(const std::string& instrum, std::string id="", std::string lid="") = 0;
+    virtual bool CancelPerpetualOrder(const std::string& instrum, std::string id="", std::string lid="") = 0;
+    virtual bool CancelOptionOrder(const std::string& instrum, std::string id="", std::string lid="") = 0;
+
+    /**
+     * @brief cancel open orders
+     * 
+     * @param params 
+     * @return std::vector<StrPair> pair of instrum/orderId or empty to cancel all
+     */
+    virtual std::vector<StrPair> CancelSpotOrders(const std::vector<StrPair>& params) = 0;
+    virtual std::vector<StrPair> CancelPerpetualOrders(const std::vector<StrPair>& params) = 0;
+    virtual std::vector<StrPair> CancelOptionOrders(const std::vector<StrPair>& params) = 0;
+
+    /**
+     * @brief Get the Last Perpetual Trade object
+     * 
+     * @param instrum 
+     * @param limit 
+     * @return Json::Value 
+     */
+    virtual Json::Value GetLastPerpetualTrade(const std::string& instrum, int limit=1) = 0;
+
+    /**
+     * @brief Query Position from exchange
+     * 
+     * @param instrum 
+     * @param lid client Order Id
+     * @return flat_set<PositionData> 
+     */
+    virtual flat_set<PositionData> GetPerpetualPositions(const std::string& instrum, std::string lid="") = 0;
+    
+    /**
+     * @brief Get the Option Position object
+     * 
+     * @param instrum 
+     * @param lid client Order Id
+     * @return flat_set<PositionData>  
+     */
+    virtual flat_set<PositionData> GetOptionPositions(const std::string& instrum, std::string lid="") = 0;
+
+    /**
+     * @brief thread to parse all incomming data using parser methods
+     * 
+     * @param messageQueue 
+     * @param numThreads 
+     * @return std::thread 
+     */
+    virtual std::thread StreamParser(MessageQueue& messageQueue, size_t numThreads=4) = 0;
+
+    /**
+     * @brief - send keep alive message to server at specified interval
+     * 
+     * @return std::thread 
+     */
+    virtual std::thread KeepAlive() = 0;
+
+    /**
+     * @brief 
+     * 
+     * @param queue 
+     */
+    virtual void BindTradesQueue(ConcurrentQueue<PriceData>* queue) = 0;
+    virtual void BindCandlesQueue(ConcurrentQueue<CandleData>* queue) = 0;
+    virtual void BindDepthQueue(ConcurrentQueue<Json::Value>* queue) = 0;
+    virtual void BindTickerQueue(ConcurrentQueue<TickerData>* queue) = 0;
+    virtual void BindOrderQueue(ConcurrentQueue<OrderData>* queue) = 0;
+    virtual void BindPositionQueue(ConcurrentQueue<PositionData>* queue) = 0;
 
 protected:
-    void InfoParser(const Json::Value &info);
-    void TradesParser(const Json::Value& data, const std::string& tag, const std::time_t& ts) override;
-    void CandlesParser(const Json::Value& data, const std::string& tag, const std::time_t& ts) override;
-    void DepthParser(const Json::Value& data, const std::string& tag, const std::time_t& ts) override;
-    void TickersParser(const Json::Value& data, const std::string& tag, const std::time_t& ts) override;
-    void OrdersParser(const Json::Value& data, const std::string& tag, const std::time_t& ts) override;
-    void PositionsParser(const Json::Value& data, const std::string& tag, const std::time_t& ts) override;
-    void ListenKeyParser(const Json::Value& data, const std::string& tag, const std::time_t& ts);
-
-    OrderData OrdersParserGet(const std::string& msg, const std::string& tag);
-    flat_set<OrderData> BatchOrdersParserGet(const std::string& msg, const std::string& tag);
-    flat_set<PositionData> PerpetualPositionParserGet(const std::string& msg, const std::string& tag);
-    flat_set<PositionData> OptionPositionParserGet(const std::string& msg, const std::string& tag);
-    
-    bool CancelBatchOrders(const std::string& assetClass, const std::string& privacy, 
-                        const std::string& querypath, cpr::Payload& payload);
-    bool GetListenKey(const std::string& assetClass, const std::string& privacy, bool keepAlive=false);
-
-    // http actions
-    void HttpCommon(const std::string &baseurl, const Json::Value& configs, 
-                const std::string& function, cpr::Payload& payload, 
-                const std::string& postData, cpr::Header& headers, bool signing=true);
-    IntStrPair HttpPost(const Json::Value& configs, const std::string& tag, 
-                    const std::string& function, cpr::Payload& payload, 
-                    const std::string& postData, cpr::Header headers=cpr::Header{}, 
-                    bool signing=true, std::string privacy="public");
-    IntStrPair HttpGet(const Json::Value& configs, const std::string& tag, 
-                    const std::string& function, cpr::Payload& payload, 
-                    const std::string& postData, cpr::Header headers=cpr::Header{}, 
-                    bool signing=true, std::string privacy="public");
-    IntStrPair HttpPut(const Json::Value& configs, const std::string& tag, 
-                    const std::string& function, cpr::Payload& payload, 
-                    const std::string& postData, cpr::Header headers=cpr::Header{}, 
-                    bool signing=true, std::string privacy="public");
-    IntStrPair HttpDelete(const Json::Value& configs, const std::string& tag, 
-                    const std::string& function, cpr::Payload& payload, 
-                    const std::string& postData, cpr::Header headers=cpr::Header{}, 
-                    bool signing=true, std::string privacy="public");
-protected:
-    long pingInterval;
-    long recvWindow;
-    long ORDERS_LIMIT;
-    long REQUEST_LIMIT;
-    LiveState liveMode;
-    time_t timestamp;
-    
-    Json::Value connParams;
-    flat_set<Filter> filters;
-    size_t MAX_BATCH_ORDERS;
-
-    std::atomic<int64_t> IP_LIMIT_COUNT = ATOMIC_FLAG_INIT;
-    std::atomic<int64_t> ORDER_LIMIT_COUNT = ATOMIC_FLAG_INIT;
-    std::atomic_bool limitResetOn = ATOMIC_FLAG_INIT;
-
-    std::atomic_bool exitThread = ATOMIC_FLAG_INIT;
-    std::atomic<int> verbose = ATOMIC_FLAG_INIT;
-    std::atomic_flag connFlag = ATOMIC_FLAG_INIT;
-
-    // caching connection info
-    flat_map<std::string, ConnHandler::ptr> connHdlPtrsMap;
-    flat_map<std::string, std::vector<WebClient::connection_ptr>> connPtrsMap;
-
-    // cache subscrition channels
-    flat_map<std::string, std::string> listenKeys;
-    flat_map<std::string, std::string> channelsMap;
-
-    // cpr Session pool
-    ConcurrentQueue<std::shared_ptr<cpr::Session>> sessionPool;
-
-    // websocket
-    WebClient endpoint;
-    WebClient::timer_ptr resetTimer;
-    websocketpp::lib::shared_ptr<websocketpp::lib::thread> wthread;
-    std::vector<std::thread> workers;
-
-    // add function to map for each event type to avoid if else
-    typedef void (Binance::*pfunct)(const Json::Value& data, const std::string& tag, const std::time_t& ts);
-    flat_map<std::string, pfunct> dispatcherMap;
-
-    // calbacks
-    ConcurrentQueue<PriceData>* priceQueue;
-    ConcurrentQueue<CandleData>* candleQueue;
-    ConcurrentQueue<Json::Value>* depthQueue;
-    ConcurrentQueue<TickerData>* tickerQueue;
-    ConcurrentQueue<OrderData>* orderQueue;
-    ConcurrentQueue<PositionData>* positionQueue;
+    /**
+     * @brief parse incomming market data to unique format
+     * 
+     * @param data trades, candles, order book, positions, orders
+     * @param tag the connection tag based on asset class [spot, swap, future, option]
+     * @param timestamp current timespace in utc
+     */
+    virtual void TradesParser(const Json::Value& data, const std::string& tag, const std::time_t& ts) = 0;
+    virtual void CandlesParser(const Json::Value& data, const std::string& tag, const std::time_t& ts) = 0;
+    virtual void DepthParser(const Json::Value& data, const std::string& tag, const std::time_t& ts) = 0;
+    virtual void TickersParser(const Json::Value& data, const std::string& tag, const std::time_t& ts) = 0;
+    virtual void OrdersParser(const Json::Value& data, const std::string& tag, const std::time_t& ts) = 0;
+    virtual void PositionsParser(const Json::Value& data, const std::string& tag, const std::time_t& ts) = 0;
 };
 }
 
+#if defined(WIN32) || defined(_WIN32)
+#define CONNECTOR_MODULE(classType, name, version)           \
+    extern "C"                                               \
+    {                                                        \
+        __declspec(dllexport) stelgic::IExchange* Create()   \
+        {                                                    \
+            return new classType();                          \
+        }                                                    \
+                                                             \
+        __declspec(dllexport) const char *Name()             \
+        {                                                    \
+            return name;                                     \
+        }                                                    \
+                                                             \
+        __declspec(dllexport) const char *Version()          \
+        {                                                    \
+            return version;                                  \
+        }                                                    \
+    }
+
+#else
+#define CONNECTOR_MODULE(classType, name, version)           \
+    extern "C"                                               \
+    {                                                        \
+        stelgic::IExchange* Create()                         \
+        {                                                    \
+            return new classType();                          \
+        }                                                    \
+                                                             \
+        const char *Name()                                   \
+        {                                                    \
+            return name;                                     \
+        }                                                    \
+                                                             \
+        const char *Version()                                \
+        {                                                    \
+            return version;                                  \
+        }                                                    \
+    }
+#endif
