@@ -475,14 +475,10 @@ bool Bybit::Subscribe(const Json::Value& params)
             std::string connKey = privacy;
             connKey.append("_").append(assetClass);
             ConnState connState = connHdlPtrsMap.at(connKey)->GetStatus();
-            
-            if(connState == ConnState::Opened && privacy == "public")
+
+            if (connState == ConnState::Opened)
             {
-                if (connState == ConnState::Opened && privacy == "public" &&
-                    Subscribe(connKey, assetClass, tag["instruments"], tag["channels"]))
-                {
-                    ++i;
-                }
+                i += Subscribe(connKey, assetClass, tag["instruments"], tag["channels"], privacy);
             }
         }
     }
@@ -560,10 +556,7 @@ std::thread Bybit::KeepAlive()
                         endpoint.connect(item.second->GetConnection());
                         pingTime = 15000;
 
-                        if(item.first.find("public") != item.first.npos)
-                        {
-                            Subscribe(connParams);
-                        }
+                        Subscribe(connParams);
                     }
                 }
                 catch(const websocketpp::exception& e)
