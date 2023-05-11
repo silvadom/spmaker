@@ -1,5 +1,5 @@
 #include "Binance.h"
-#include <g3log/g3log.hpp>
+#include "public/LogHelper.h"
 #include <boost/iostreams/filtering_streambuf.hpp>
 #include <boost/iostreams/copy.hpp>
 
@@ -50,6 +50,8 @@ void Binance::Init(const Json::Value& params, int logLevel)
     for(int i=0; i < numSession; ++i)
         sessionPool.enqueue(std::make_shared<cpr::Session>());
 
+    InitializeLogger();
+    
     for(const Json::Value& item: connParams["websocket"]["private"]["subscribe"])
     {
         Json::Value info = GetMarketInfo(item.asString());
