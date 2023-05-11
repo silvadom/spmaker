@@ -153,6 +153,9 @@ protected:
     std::atomic<int> verbose = ATOMIC_FLAG_INIT;
     std::atomic_flag connFlag = ATOMIC_FLAG_INIT;
 
+    // mapping position edge mode to LONG, SHORT, BOTH
+    flat_map<int, std::string> edgeModesMap;
+
     // caching connection info
     flat_map<std::string, ConnHandler::ptr> connHdlPtrsMap;
     flat_map<std::string, std::vector<WebClient::connection_ptr>> connPtrsMap;

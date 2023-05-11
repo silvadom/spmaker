@@ -16,9 +16,9 @@ Bybit::Bybit() : recvWindow(60000), pingInterval(60000),
     dispatcherMap["position"] = (pfunct)&Bybit::PositionsParser;
     dispatcherMap["auth"] = (pfunct)&Bybit::Authentication;
 
-    paramMapping[0] = "BOTH";
-    paramMapping[1] = "LONG";
-    paramMapping[2]= "SHORT";
+    edgeModesMap.emplace(0, "BOTH");
+    edgeModesMap.emplace(1, "LONG");
+    edgeModesMap.emplace(2, "SHORT");
     paramMapping["GTC"]= "GoodTillCancel";
     paramMapping["IOC"]= "ImmediateOrCancel";
     paramMapping["FOK"]= "FillOrKill";
@@ -310,8 +310,6 @@ ConnState Bybit::Connect(const Json::Value& params)
             }
             
             // set header api key
-            std::string apikey = secrets[assetClass][privacy].get("apikey", "").asString();
-            con->replace_header("X-MBX-APIKEY", apikey);
             con->replace_header("Accept-Encoding", "gzip,deflate,zlib");
 
             endpoint.connect(con);
