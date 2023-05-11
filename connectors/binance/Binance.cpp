@@ -304,18 +304,7 @@ ConnState Binance::Connect(const Json::Value& params)
             size_t pos = url.find_last_of('?');
             if(pos != url.npos)
                 query = url.substr(pos+1);
-
-            const Json::Value& secrets = params["secrets"];
-            if(privacy == "private")
-            {
-                std::string apisecret = secrets[assetClass][privacy].get("apisecret", "").asString();
-                std::string signature = AuthUtils::GetSignature(apisecret, query);
-                con->replace_header("signature", signature);
-            }
-            
-            // set header api key
-            std::string apikey = secrets[assetClass][privacy].get("apikey", "").asString();
-            con->replace_header("X-MBX-APIKEY", apikey);
+                        
             con->replace_header("Accept-Encoding", "gzip,deflate,zlib");
 
             endpoint.connect(con);
