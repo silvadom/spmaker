@@ -12,8 +12,8 @@ Bybit::Bybit() : recvWindow(5000), pingInterval(60000),
     dispatcherMap["kline"] = (pfunct)&Bybit::CandlesParser;
     dispatcherMap["orderbook"] = (pfunct)&Bybit::DepthParser;
     dispatcherMap["tickers"] = (pfunct)&Bybit::TickersParser;
-    dispatcherMap["order"] = (pfunct)&Bybit::OrdersParser;
-    dispatcherMap["position"] = (pfunct)&Bybit::PositionsParser;
+    dispatcherMap["user.order"] = (pfunct)&Bybit::OrdersParser;
+    dispatcherMap["user.position"] = (pfunct)&Bybit::PositionsParser;
     dispatcherMap["auth"] = (pfunct)&Bybit::Authentication;
 
     edgeModesMap.emplace(0, "BOTH");
@@ -2001,15 +2001,14 @@ void Bybit::PositionsParser(const Json::Value& data, const std::string& tag, con
             posData.price = std::stod(item.get("entryPrice","0.0").asString());
             posData.quantity = std::stod(item.get("size","0.0").asString());
             posData.pnl = std::stod(item.get("unrealisedPnl","0.0").asString());
-            posData.assetClass = item.get("assetClass", tag).asString();
-            posData.leverage = item.get("leverage", 1).asInt64();
-            posData.timestamp = data["createdTime"].asInt64();
+            posData.leverage = std::stoi(item.get("leverage", "1").asString());
+            posData.timestamp = std::stol(item.get("createdTime", "0").asString());
             posData.ltimestamp = posData.timestamp;
 
             posData.attrs["marginType"] = item.get("tradeMode","");
             posData.attrs["markPrice"] = std::stod(item.get("markPrice","0.0").asString());
             
-            int edgeMode = item.get("positionIdx","-1").asInt();
+            int edgeMode = item.get("positionIdx",0).asInt();
             posData.posSide = paramMapping.get(edgeMode, "BOTH").asString();
             posData.entryDate = Utils::FormatDatetime(posData.timestamp);
             posData.UpdateLocalId();
@@ -2051,8 +2050,8 @@ flat_set<PositionData> Bybit::PerpetualPositionParserGet(const std::string& msg,
             posData.price = std::stod(item.get("entryPrice","0.0").asString());
             posData.quantity = std::stod(item.get("positionValue","0.0").asString());
             posData.pnl = std::stod(item.get("unrealisedPnl","0.0").asString());
-            posData.leverage = item.get("leverage", 1).asInt64();
-            posData.timestamp = item["createdTime"].asInt64();
+            posData.leverage = std::stoi(item.get("leverage", "1").asString());
+            posData.timestamp = std::stol(item.get("createdTime", "0").asString());
             posData.ltimestamp = posData.timestamp;
             
             posData.attrs["marginType"] = item.get("tradeMode","");
@@ -2060,7 +2059,7 @@ flat_set<PositionData> Bybit::PerpetualPositionParserGet(const std::string& msg,
             posData.attrs["markPrice"] = std::stod(item.get("markPrice","0.0").asString());
             posData.attrs["liqPrice"] = std::stod(item.get("liqPrice","0.0").asString());
             
-            int edgeMode = item.get("positionIdx","0").asInt();
+            int edgeMode = item.get("positionIdx",0).asInt();
             posData.posSide = paramMapping.get(edgeMode, "BOTH").asString();
             posData.entryDate = Utils::FormatDatetime(posData.timestamp);
             posData.UpdateLocalId();
