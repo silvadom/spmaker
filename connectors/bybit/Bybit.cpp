@@ -295,25 +295,6 @@ ConnState Bybit::Connect(const Json::Value& params)
                 numThreads = std::max(numThreads, std::thread::hardware_concurrency()-4);
 
             workers.push_back(StreamParser(connHdlPtr->GetQueue(), numThreads));
-
-            // set header api expire date
-            std::stringstream ssexpire;
-            ssexpire << Utils::GetSeconds(24*3600);
-            con->replace_header("timestamp", ssexpire.str());
-            
-            // set header api signature
-            std::string query = url;
-            size_t pos = url.find_last_of('?');
-            if(pos != url.npos)
-                query = url.substr(pos+1);
-
-            const Json::Value& secrets = params["secrets"];
-            if(privacy == "private")
-            {
-                std::string apisecret = secrets[assetClass][privacy].get("apisecret", "").asString();
-                std::string signature = AuthUtils::GetSignature(apisecret, query);
-                con->replace_header("signature", signature);
-            }
             
             // set header api key
             con->replace_header("Accept-Encoding", "gzip,deflate,zlib");
@@ -381,17 +362,18 @@ bool Bybit::Authentication(const std::string& connKey,
     builder["indentation"] = "";
     
     authenticationMap[connKey] = {0};
-    int64_t expires = Utils::GetMilliseconds(1000);
+    int64_t expires = Utils::GetMilliseconds(10000);
 
     const Json::Value& secrets = connParams["secrets"];
-    std::string apikey = secrets[assetClass][privacy].get("apikey", "").asString();
-    std::string apisecret = secrets[assetClass][privacy].get("apisecret", "").asString();
+    std::string apikey = secrets[privacy][assetClass].get("apikey", "").asString();
+    std::string apisecret = secrets[privacy][assetClass].get("apisecret", "").asString();
 
     std::string query("GET/realtime");
     query.append(std::to_string(expires));
     std::string signature = AuthUtils::GetSignature(apisecret, query);
     
     payload["op"] = "auth";
+    //payload["req_id"] = std::to_string(Utils::GetSeconds());
     payload["args"] = Json::Value(Json::arrayValue);
 
     payload["args"].append(apikey);
@@ -399,7 +381,7 @@ bool Bybit::Authentication(const std::string& connKey,
     payload["args"].append(signature);
 
     std::string msg(Json::writeString(builder, payload));
-    LOG_IF(INFO, verbose > 1) << "AUTHENTICATION: " << msg;
+    LOG_IF(INFO, verbose > 0) << "AUTHENTICATION: " << msg;
     if(Send(connKey, msg))
     {
         int wait = 3;
