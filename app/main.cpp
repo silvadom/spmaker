@@ -13,6 +13,7 @@ namespace fs = std::filesystem;
 namespace po = boost::program_options;
 using namespace stelgic;
 
+std::string exchange;
 int verbosity = 1;
 int NUM_THREADS = 8;
 int capital = 5000;
@@ -40,6 +41,7 @@ bool getCommandLineArgs(int argc, char** argv)
 
     desc.add_options()
     ("help,h", "produce help message")
+    ("exchange,e", po::value<std::string>(&exchange), "connector/exchange name")
     ("risk,r", po::value<double>(&riskLimit)->default_value(0.1), "capital to risk percentage per trade")
     ("capital,c", po::value<int>(&capital)->default_value(6000), "max capital in USD")
     ("threads,t", po::value<int>(&NUM_THREADS)->default_value(8), "num threads to process data")
@@ -92,11 +94,14 @@ int main(int argc, char** argv)
 
     bool success = false;
     std::string err;
+    std::string filename("../modules/");
+    filename.append(exchange);
 #if defined(_WIN32) || defined(_WIN64)
-    std::string MODULE_PATH = fs::canonical(std::string("../modules/binance.dll")).string();
+    filename.append(".dll");
 #elif defined(__linux__)
-    std::string MODULE_PATH = fs::canonical(std::string("../modules/libbinance.so")).string();
+    filename.append(".so");
 #endif
+    std::string MODULE_PATH = fs::canonical(filename).string();
     std::string CONFIG_PATH = fs::canonical(std::string("../configs/connector.config")).string();
 
     ModuleLoader<IExchange> module(MODULE_PATH);
@@ -138,7 +143,7 @@ int main(int argc, char** argv)
 
     // Initiliaze connector
     LOG(INFO) << "Initializing...";
-    connector->Init(connParams["binance"], verbosity);
+    connector->Init(connParams[exchange], verbosity);
     if(!connector->IsInitialized())
     {
         LOG(WARNING) << "Failed to Initialize connector";
@@ -158,7 +163,7 @@ int main(int argc, char** argv)
     const auto& filters = connector->GetFilters();
 
     // check if need to subscribe all symbols
-    Json::Value& publicParams = connParams["binance"]["websocket"]["public"];
+    Json::Value& publicParams = connParams[exchange]["websocket"]["public"];
     for(const Json::Value& item: publicParams["instruments"])
     {
         if(item.asString() == "*")
@@ -395,7 +400,7 @@ int main(int argc, char** argv)
     workers.push_back(connector->KeepAlive());
 
     // connect and subscribe to exchange 
-    ConnState state = connector->Connect(connParams["binance"]);
+    ConnState state = connector->Connect(connParams[exchange]);
     if(state != ConnState::Opened)
     {
         LOG(WARNING) << "Failed to connect exchange";
@@ -408,7 +413,7 @@ int main(int argc, char** argv)
     std::this_thread::sleep_for(std::chrono::seconds(5));
 
     // subscribe to websocket channels
-    connector->Subscribe(connParams["binance"]);
+    connector->Subscribe(connParams[exchange]);
 
     for(auto& task: workers)
         task.join();
