@@ -1843,33 +1843,34 @@ void Bybit::OrdersParser(const Json::Value& data, const std::string& tag, const 
     {
         if(orderQueue)
         {
-            OrderData ordData;
-            ordData.exchange = "bybit";
-            ordData.assetClass = tag;
+            for(const Json::Value& order: data["data"])
+            {
+                OrderData ordData;
+                ordData.exchange = "bybit";
+                ordData.assetClass = tag;
 
-            const Json::Value& order = data["data"];
+                ordData.instrum = order.get("symbol", "").asString();
+                ordData.state = order.get("orderStatus","").asString();
+                ordData.id = order.get("orderId","").asString();
+                ordData.lid = order.get("orderLinkId","").asString();
+                ordData.local = false;
+                
+                ordData.timestamp = std::stoll(order.get("createdTime","0").asString());
+                ordData.side = order.get("side","").asString();
+                ordData.orderType = order.get("orderType","LIMIT").asString();
+                ordData.price = std::stod(order.get("price", "0.0").asString());
+                ordData.stopPrice = std::stod(order.get("stopLoss", "0.0").asString());
+                ordData.quantity = std::stod(order.get("qty", "0.0").asString());
+                ordData.execQuantity = std::stod(order.get("cumExecQty", "0.0").asString());
+                ordData.timeInForce = order.get("timeInForce", "GTC").asString();
+                ordData.closePosition = order.get("reduceOnly", 0).asBool();
+                ordData.posSide = order.get("posSide", "BOTH").asString();
 
-            ordData.instrum = order.get("symbol", "").asString();
-            ordData.state = order.get("orderStatus","").asString();
-            ordData.id = order.get("orderId","").asString();
-            ordData.lid = order.get("orderLinkId","").asString();
-            ordData.local = false;
-            
-            ordData.timestamp = std::stol(order.get("createdTime","0").asString());
-            ordData.side = order.get("side","").asString();
-            ordData.orderType = order.get("orderType","LIMIT").asString();
-            ordData.price = std::stod(order.get("price", "0.0").asString());
-            ordData.stopPrice = std::stod(order.get("stopLoss", "0.0").asString());
-            ordData.quantity = std::stod(order.get("qty", "0.0").asString());
-            ordData.execQuantity = std::stod(order.get("cumExecQty", "0.0").asString());
-            ordData.timeInForce = order.get("timeInForce", "GTC").asString();
-            ordData.closePosition = order.get("reduceOnly", 0).asBool();
-            ordData.posSide = order.get("posSide", "BOTH").asString();
+                ordData.date = Utils::FormatDatetime(ordData.timestamp);
 
-            ordData.date = Utils::FormatDatetime(ordData.timestamp);
-
-            if(orderQueue)
-                orderQueue->enqueue(ordData);
+                if(orderQueue)
+                    orderQueue->enqueue(ordData);
+            }
         }
     }
     catch(std::exception& e)
@@ -1904,7 +1905,7 @@ OrderData Bybit::OrdersParserGet(const std::string& msg, const std::string& tag)
             ordData.lid = order.get("orderLinkId","").asString();
             ordData.local = false;
             
-            ordData.timestamp = std::stol(order.get("createdTime","0").asString());
+            ordData.timestamp = std::stoll(order.get("createdTime","0").asString());
             ordData.side = order.get("side","").asString();
             ordData.orderType = order.get("orderType","LIMIT").asString();
             ordData.price = std::stod(order.get("price", "0.0").asString());
@@ -1996,20 +1997,20 @@ void Bybit::PositionsParser(const Json::Value& data, const std::string& tag, con
             posData.assetClass = tag;
             posData.local = false;
 
-            posData.instrum = item["symbol"].asString();
+            posData.instrum = item.get("symbol","").asString();
             posData.side = item.get("side","").asString();
             posData.price = std::stod(item.get("entryPrice","0.0").asString());
             posData.quantity = std::stod(item.get("size","0.0").asString());
             posData.pnl = std::stod(item.get("unrealisedPnl","0.0").asString());
             posData.leverage = std::stoi(item.get("leverage", "1").asString());
-            posData.timestamp = std::stol(item.get("createdTime", "0").asString());
+            posData.timestamp = std::stoll(item.get("createdTime", "0").asString());
             posData.ltimestamp = posData.timestamp;
 
             posData.attrs["marginType"] = item.get("tradeMode","");
             posData.attrs["markPrice"] = std::stod(item.get("markPrice","0.0").asString());
             
             int edgeMode = item.get("positionIdx",0).asInt();
-            posData.posSide = paramMapping.get(edgeMode, "BOTH").asString();
+            posData.posSide = edgeModesMap.at(edgeMode);
             posData.entryDate = Utils::FormatDatetime(posData.timestamp);
             posData.UpdateLocalId();
 
@@ -2045,13 +2046,13 @@ flat_set<PositionData> Bybit::PerpetualPositionParserGet(const std::string& msg,
     {
         for(const Json::Value& item: records["result"]["list"])
         {
-            posData.instrum = item["symbol"].asString();
+            posData.instrum = item.get("symbol","").asString();
             posData.side = item.get("side","").asString();
             posData.price = std::stod(item.get("entryPrice","0.0").asString());
             posData.quantity = std::stod(item.get("positionValue","0.0").asString());
             posData.pnl = std::stod(item.get("unrealisedPnl","0.0").asString());
             posData.leverage = std::stoi(item.get("leverage", "1").asString());
-            posData.timestamp = std::stol(item.get("createdTime", "0").asString());
+            posData.timestamp = std::stoll(item.get("createdTime", "0").asString());
             posData.ltimestamp = posData.timestamp;
             
             posData.attrs["marginType"] = item.get("tradeMode","");
@@ -2060,7 +2061,7 @@ flat_set<PositionData> Bybit::PerpetualPositionParserGet(const std::string& msg,
             posData.attrs["liqPrice"] = std::stod(item.get("liqPrice","0.0").asString());
             
             int edgeMode = item.get("positionIdx",0).asInt();
-            posData.posSide = paramMapping.get(edgeMode, "BOTH").asString();
+            posData.posSide = edgeModesMap.at(edgeMode);
             posData.entryDate = Utils::FormatDatetime(posData.timestamp);
             posData.UpdateLocalId();
 
