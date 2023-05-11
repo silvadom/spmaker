@@ -19,6 +19,11 @@ Bybit::Bybit() : recvWindow(5000), pingInterval(60000),
     edgeModesMap.emplace(0, "BOTH");
     edgeModesMap.emplace(1, "LONG");
     edgeModesMap.emplace(2, "SHORT");
+
+    paramMapping["BOTH"]= 0;
+    paramMapping["LONG"]= 1;
+    paramMapping["SHORT"]= 2;
+
     paramMapping["GTC"]= "GoodTillCancel";
     paramMapping["IOC"]= "ImmediateOrCancel";
     paramMapping["FOK"]= "FillOrKill";
@@ -582,20 +587,28 @@ void Bybit::HttpCommon(
     const std::string& postData, cpr::Header& headers, bool signing)
 {
     int64_t epoch = Utils::GetMilliseconds(0);
-    std::string nonce = Utils::GetUrandom(8);
-
+    
     headers.emplace("X-BAPI-API-KEY", configs["apikey"].asString());
     headers.emplace("X-BAPI-RECV-WINDOW", std::to_string(recvWindow));
     headers.emplace("X-BAPI-TIMESTAMP", std::to_string(epoch));
-    headers.emplace("Content-Type","application/json; charset=utf-8");
+    headers.emplace("Content-Type","application/json");
         
     if(signing)
     {
-        std::string content = postData.empty() ? payload.content: postData;
+        // param_str= str(time_stamp) + api_key + recv_window + payload
+        std::string content(std::to_string(epoch));
+        content.append(configs["apikey"].asString());
+        content.append(std::to_string(recvWindow));
+        if(!postData.empty())
+            content.append(postData);
+        else
+            content.append(payload.content);
+
         std::string signature = AuthUtils::GetSignature(
             configs["apisecret"].asString(), content);
             
         headers.emplace("X-BAPI-SIGN", signature);
+        headers.emplace("X-BAPI-SIGN-TYPE", "2");
     }
 }
 
@@ -620,7 +633,7 @@ IntStrPair Bybit::HttpPost(const Json::Value& configs,
     headers.emplace("Accept-Encoding", "gzip,deflate,zlib");
 
     session->SetUrl({baseurl + url});
-    session->SetOption(cpr::Body(content));
+    session->SetOption(cpr::Body(dataPost));
     session->SetVerifySsl(cpr::VerifySsl(false));
     session->SetHeader(headers);
 
@@ -641,7 +654,7 @@ IntStrPair Bybit::HttpPost(const Json::Value& configs,
         << "POST: " << baseurl + url << "?" 
         << cpr::Body(dataPost) << "\n"
         << r.status_code 
-        << " X-Bapi-Limit-Status=" << IP_LIMIT_COUNT;
+        << " IP_LIMIT_COUNT=" << IP_LIMIT_COUNT;
 
     return  std::make_pair(r.status_code, r.text);
 }
@@ -704,10 +717,15 @@ IntStrPair Bybit::HttpPut(
 
     HttpCommon(baseurl, secrets, function, payload, postData, headers, signing);
 
-    std::string postBody = payload.content;
+    std::string content = payload.content;
+    std::string dataPost = postData;
+    if(postData.empty())
+        dataPost.append(content);
+
+    headers.emplace("Accept-Encoding", "gzip,deflate,zlib");
     
     session->SetUrl({baseurl + url});
-    session->SetOption(cpr::Body(postBody));
+    session->SetOption(cpr::Body(dataPost));
     session->SetVerifySsl(cpr::VerifySsl(false));
     session->SetHeader(headers);
 
@@ -725,7 +743,7 @@ IntStrPair Bybit::HttpPut(
         IP_LIMIT_COUNT = REQUEST_LIMIT.load();
 
     LOG_IF(INFO, verbose > 1)
-        << "PUT: " << baseurl + url << "?" << cpr::Body(postBody) <<  "\n"
+        << "PUT: " << baseurl + url << "?" << cpr::Body(dataPost) <<  "\n"
         << r.status_code << " " << r.header["content-type"];
 
     return  std::make_pair(r.status_code, r.text);
@@ -978,6 +996,9 @@ bool Bybit::BuildNewOrder(const Json::Value &params, cpr::Payload& payload)
                     payload.AddPair({"takeProfit", sstp.str()});
             }
 
+            if(params.isMember("posSide") && !params["posSide"].asString().empty())
+                payload.AddPair({"positionIdx", paramMapping.get(params["posSide"].asString(), 0).asInt()});
+
             if(params.isMember("clOrderId") && !params["clOrderId"].asString().empty())
                 payload.AddPair({"orderLinkId", params["clOrderId"].asString()});
 
@@ -1057,10 +1078,15 @@ bool Bybit::BuildNewOrder(const Json::Value &params, Json::Value& payload)
             ssq << quantity;
 
             std::string orderType = params.get("orderType", "LIMIT").asString();
-            std::transform(orderType.begin(), orderType.end(), orderType.begin(), ::toupper);
+            std::transform(orderType.begin(), orderType.end(), orderType.begin(), ::tolower);
+            orderType.at(0) = ::toupper(orderType.at(0));
+
+            std::string orderSide = params.get("side", "Buy").asString();
+            std::transform(orderSide.begin(), orderSide.end(), orderSide.begin(), ::tolower);
+            orderSide.at(0) = ::toupper(orderSide.at(0));
 
             payload["symbol"] = params["instrum"].asString();
-            payload["side"] = params["side"].asString();
+            payload["side"] = orderSide;
             payload["orderType"] = orderType;
 
             if(orderType != "MARKET")
@@ -1071,6 +1097,9 @@ bool Bybit::BuildNewOrder(const Json::Value &params, Json::Value& payload)
                 if(profitPrice > 0)
                     payload["takeProfit"] = sstp.str();
             }
+
+            if(params.isMember("posSide") && !params["posSide"].asString().empty())
+                payload["positionIdx"] = paramMapping.get(params["posSide"].asString(), 0).asInt();
 
             if(params.isMember("clOrderId") && !params["clOrderId"].asString().empty())
                 payload["orderLinkId"] = params["clOrderId"].asString();
@@ -1872,9 +1901,9 @@ OrderData Bybit::OrdersParserGet(const std::string& msg, const std::string& tag)
     Json::CharReaderBuilder rbuilder;
     reader.reset(rbuilder.newCharReader());
 
-    if(reader->parse(msg.c_str(), msg.c_str() + msg.size(),&records, &errs))
+    if(reader->parse(msg.c_str(), msg.c_str() + msg.size(),&records, &errs) && records["retCode"].asInt() == 0)
     {
-        for(const Json::Value& order: records)
+        for(const Json::Value& order: records["list"])
         {
             ordData.instrum = order.get("symbol", "").asString();
             ordData.state = order.get("orderStatus","").asString();
@@ -1899,6 +1928,12 @@ OrderData Bybit::OrdersParserGet(const std::string& msg, const std::string& tag)
         }
         //ordData.UpdateLocalId();
     }
+    else
+    {
+        Json::StreamWriterBuilder builder;
+        builder["indentation"] = "";
+        LOG_IF(WARNING, verbose > 0) << Json::writeString(builder, records);
+    }
 
     return ordData;
 }
@@ -1909,11 +1944,12 @@ flat_set<OrderData> Bybit::BatchOrdersParserGet(const std::string& msg, const st
     
     Json::Value records;
     std::string errs;
+    bool success = false;
     std::unique_ptr<Json::CharReader> reader;
     Json::CharReaderBuilder rbuilder;
     reader.reset(rbuilder.newCharReader());
 
-    if(reader->parse(msg.c_str(), msg.c_str() + msg.size(),&records, &errs))
+    if(reader->parse(msg.c_str(), msg.c_str() + msg.size(),&records, &errs) && records["retCode"].asInt() == 0)
     {
         for(const Json::Value& order: records["result"]["list"])
         {
@@ -1943,7 +1979,14 @@ flat_set<OrderData> Bybit::BatchOrdersParserGet(const std::string& msg, const st
 
             //ordData.UpdateLocalId();
             orders.insert(ordData);
+            success = true;
         }
+    }
+    else
+    {
+        Json::StreamWriterBuilder builder;
+        builder["indentation"] = "";
+        LOG_IF(WARNING, verbose > 0) << Json::writeString(builder, records);
     }
 
     return orders;
