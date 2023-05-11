@@ -342,6 +342,11 @@ ConnState Bybit::Connect(const Json::Value& params)
 
             LOG_IF(INFO, verbose > 2) << "Connected to " << privacy 
                                                 << " " << assetClass << " " << url;
+
+            if(privacy == "private" && Authentication(connKey, assetClass, privacy))
+            {
+                LOG_IF(WARNING, verbose > 0) << "Successful authenticated to private " << assetClass;
+            }
         }
     }
 
@@ -387,7 +392,6 @@ bool Bybit::Authentication(const std::string& connKey,
     std::string signature = AuthUtils::GetSignature(apisecret, query);
     
     payload["op"] = "auth";
-    payload["req_id"] = std::to_string(Utils::GetSeconds());
     payload["args"] = Json::Value(Json::arrayValue);
 
     payload["args"].append(apikey);
@@ -427,7 +431,7 @@ bool Bybit::Subscribe(const std::string& key,
         Json::Value payload;
         
         builder["indentation"] = "";
-        payload["op"] = "auth";
+        payload["op"] = "subscribe";
         payload["req_id"] = std::to_string(Utils::GetSeconds());
         payload["args"] = Json::Value(Json::arrayValue);
 
@@ -447,9 +451,9 @@ bool Bybit::Subscribe(const std::string& key,
             {
                 std::string name(symbol.asString());
                 std::stringstream sstag;
-                std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+                std::transform(name.begin(), name.end(), name.begin(), ::toupper);
 
-                sstag << name << "." << sstopics.str();
+                sstag << sstopics.str() << "." << name;
                 payload["args"].append(sstag.str());
                 success = true;
             }
@@ -982,8 +986,7 @@ bool Bybit::BuildNewOrder(const Json::Value &params, cpr::Payload& payload)
 
             payload.AddPair({"symbol", params["instrum"].asString()});
             payload.AddPair({"side", params["side"].asString()});
-            payload.AddPair({"orderType", orderType});
-            payload.AddPair({"timeInForce", params.get("timeInForce","GTC").asString()});        
+            payload.AddPair({"orderType", orderType});     
                         
             if(orderType != "MARKET")
             {
@@ -1009,12 +1012,11 @@ bool Bybit::BuildNewOrder(const Json::Value &params, cpr::Payload& payload)
                 if(params.get("reduceOnly", false).asBool())
                     payload.AddPair({"reduceOnly", "true"});
 
-                if(params.get("postOnly", false).asBool())
-                    payload.AddPair({"postOnly", "true"});
-
-                payload.AddPair({"qty", ssq.str()});
+                payload.AddPair({"quantity", ssq.str()});
             }
 
+            std::string timeInForce = params.get("timeInForce","GTC").asString(); 
+            payload.AddPair({"timeInForce", paramMapping.get(timeInForce, "GoodTillCancel").asString()});
 
             success = true;
         }
@@ -1629,7 +1631,7 @@ void Bybit::InfoParser(const Json::Value& info)
 
                 filters.insert(filter);
 
-                LOG_IF(INFO, verbose > 0) << "Filter: " << filter;
+                LOG_IF(INFO, verbose > 1) << "Filter: " << filter;
             }
         }
         catch(std::exception& e)
@@ -1798,14 +1800,14 @@ void Bybit::TickersParser(const Json::Value& data, const std::string& tag, const
             tickData.assetClass = tag;
 
             // convert timestamp into date, time and sec
-            tickData.timestamp = ticker["t"].asInt64();
+            tickData.timestamp = data["ts"].asInt64();
             
             // get tick data transaction info
-            tickData.instrum = ticker["s"].asString();
-            tickData.bidQty = std::stod(ticker["bq"].asString());
-            tickData.askQty = std::stod(ticker["aq"].asString());
-            tickData.bid = std::stod(ticker["bp"].asString());
-            tickData.ask = std::stod(ticker["ap"].asString());
+            tickData.instrum = ticker["symbol"].asString();
+            tickData.bidQty = std::stod(ticker["bid1Size"].asString());
+            tickData.askQty = std::stod(ticker["ask1Size"].asString());
+            tickData.bid = std::stod(ticker["bid1Price"].asString());
+            tickData.ask = std::stod(ticker["ask1Price"].asString());
             
             if(tickerQueue)
                 tickerQueue->enqueue(tickData);
@@ -1920,7 +1922,7 @@ flat_set<OrderData> Bybit::BatchOrdersParserGet(const std::string& msg, const st
 
     if(reader->parse(msg.c_str(), msg.c_str() + msg.size(),&records, &errs))
     {
-        for(const Json::Value& order: records)
+        for(const Json::Value& order: records["result"]["list"])
         {
             OrderData ordData;
             ordData.exchange = "bybit";
