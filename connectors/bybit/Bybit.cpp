@@ -1,11 +1,11 @@
 #include "Bybit.h"
-#include <g3log/g3log.hpp>
+#include "public/LogHelper.h"
 #include <boost/iostreams/filtering_streambuf.hpp>
 #include <boost/iostreams/copy.hpp>
 
 namespace stelgic
 {
-Bybit::Bybit() : recvWindow(60000), pingInterval(60000), 
+Bybit::Bybit() : recvWindow(5000), pingInterval(60000), 
     ORDERS_LIMIT(300), REQUEST_LIMIT(300)
 {
     dispatcherMap["publicTrade"] = (pfunct)&Bybit::TradesParser;
@@ -22,6 +22,10 @@ Bybit::Bybit() : recvWindow(60000), pingInterval(60000),
     paramMapping["GTC"]= "GoodTillCancel";
     paramMapping["IOC"]= "ImmediateOrCancel";
     paramMapping["FOK"]= "FillOrKill";
+
+    paramMapping["spot"]= "spot";
+    paramMapping["future"]= "linear";
+    paramMapping["option"]= "option";
 
     timestamp = 0;
     MAX_BATCH_ORDERS = 5;
@@ -56,6 +60,8 @@ void Bybit::Init(const Json::Value& params, int logLevel)
     int numSession = connParams.get("numSessions", 4).asInt();
     for(int i=0; i < numSession; ++i)
         sessionPool.enqueue(std::make_shared<cpr::Session>());
+
+    InitializeLogger();
 
     for(const Json::Value& item: connParams["websocket"]["private"]["subscribe"])
     {
@@ -592,19 +598,19 @@ void Bybit::HttpCommon(
     int64_t epoch = Utils::GetMilliseconds(0);
     std::string nonce = Utils::GetUrandom(8);
 
-    headers.emplace("X-MBX-APIKEY", configs["apikey"].asString());
+    headers.emplace("X-BAPI-API-KEY", configs["apikey"].asString());
     headers.emplace("Content-Type","application/x-www-form-urlencoded;charset=UTF-8");
         
     if(signing)
     {
-        payload.AddPair({"recvWindow", std::to_string(recvWindow)});
-        payload.AddPair({"timestamp", std::to_string(epoch)});
+        payload.AddPair({"X-BAPI-RECV-WINDOW", std::to_string(recvWindow)});
+        payload.AddPair({"X-BAPI-TIMESTAMP", std::to_string(epoch)});
 
         std::string content = payload.content;
         std::string signature = AuthUtils::GetSignature(
             configs["apisecret"].asString(), content);
             
-        payload.AddPair({"signature", signature});
+        payload.AddPair({"X-BAPI-SIGN", signature});
     }
 }
 
@@ -798,6 +804,10 @@ Json::Value Bybit::GetMarketInfo(const std::string& assetClass)
     std::string postData;
     std::string querypath = assetClass;
     querypath.append("v3/public/symbols");
+    if(assetClass == "future")
+        querypath = "derivatives/v3/public/instruments-info";
+
+    payload.AddPair({"category", paramMapping.get(assetClass, "").asString()});
         
     auto response = HttpGet(connParams, assetClass, querypath, payload, postData);
     if(response.first == 200)
@@ -1599,25 +1609,35 @@ flat_set<PositionData> Bybit::GetOptionPositions(const std::string& instrum, std
 
 void Bybit::InfoParser(const Json::Value& info)
 {
-    if(info.get("retCode", "-1") == 0)
+    if(info.get("retCode", "-1").asInt() == 0)
     {
-        for(const Json::Value& item: info["result"])
+        try
         {
-            Filter filter;
-            filter.instrum = item["name"].asString();
-            filter.status = item["status"].asString();
-            filter.pxPrecision = item["quotePrecision"].asDouble();
-            filter.qtyPrecision = item["basePrecision"].asDouble();
-            filter.basePrecision = item["basePrecision"].asInt();
-            filter.quotePrecision = item["quotePrecision"].asInt();
-            filter.tickSize = std::stod(item["minPricePrecision"].asString());
-            filter.maxPrice = std::stod(item["maxTradeAmt"].asString());
-            filter.stepSize = std::stod(item["minTradeQty"].asString());
-            filter.maxQty = std::stod(item["maxTradeQty"].asString());
+            for(const Json::Value& item: info["result"]["list"])
+            {
+                Filter filter;
+                filter.instrum = item["symbol"].asString();
+                filter.status = item["status"].asString();
+                filter.pxPrecision = 8; //item["pricePrecision"].asDouble();
+                filter.qtyPrecision = 8; //item["basePrecision"].asDouble();
+                filter.basePrecision = 8; //item["basePrecision"].asInt();
+                filter.quotePrecision = 8; //item["quotePrecision"].asInt();
+                filter.tickSize = std::stod(item["priceFilter"]["tickSize"].asString());
+                filter.maxPrice = std::stod(item["priceFilter"]["maxPrice"].asString());
+                filter.stepSize = std::stod(item["lotSizeFilter"]["qtyStep"].asString());
+                filter.maxQty = std::stod(item["lotSizeFilter"]["maxOrderQty"].asString());
 
-            filters.insert(filter);
+                filters.insert(filter);
 
-            LOG_IF(INFO, verbose > 2) << "Filter: " << filter;
+                LOG_IF(INFO, verbose > 0) << "Filter: " << filter;
+            }
+        }
+        catch(std::exception& e)
+        {
+            Json::StreamWriterBuilder builder;
+            builder["indentation"] = "\t";
+            LOG_IF(INFO, verbose > 0) 
+                << e.what() << "\n" << Json::writeString(builder, info);
         }
     }
 }

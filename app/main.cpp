@@ -149,7 +149,7 @@ int main(int argc, char** argv)
         LOG(WARNING) << "Failed to Initialize connector";
         std::this_thread::sleep_for(std::chrono::seconds(2));
         _Exit(EXIT_FAILURE);
-    } 
+    }
     
     SpinLock tickerLock;
     bool resetLimitOn = false;
