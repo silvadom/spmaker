@@ -231,7 +231,7 @@ ConnState Bybit::Connect(const Json::Value& params)
             std::string connKey(privacy);
             connKey.append("_").append(assetClass);
             
-            LOG_IF(INFO, verbose > 1) << "Connecting to " 
+            LOG_IF(INFO, verbose > 0) << "Connecting to " 
                 << privacy << " " << assetClass << " " << url;
 
             websocketpp::lib::error_code ec;
@@ -401,7 +401,7 @@ bool Bybit::Subscribe(const std::string& key,
     const std::string& market, const Json::Value& symbols, 
     const Json::Value& channels, std::string privacy)
 {
-    LOG_IF(INFO, verbose > 0) << "Subscribing to Bybit " << privacy << " channels...";
+    LOG_IF(INFO, verbose > 1) << "Subscribing to Bybit " << privacy << " channels...";
     int num = 0;
     for(const auto& member: channels)
     {
@@ -585,18 +585,17 @@ void Bybit::HttpCommon(
     std::string nonce = Utils::GetUrandom(8);
 
     headers.emplace("X-BAPI-API-KEY", configs["apikey"].asString());
-    headers.emplace("Content-Type","application/x-www-form-urlencoded;charset=UTF-8");
+    headers.emplace("X-BAPI-RECV-WINDOW", std::to_string(recvWindow));
+    headers.emplace("X-BAPI-TIMESTAMP", std::to_string(epoch));
+    headers.emplace("Content-Type","application/json; charset=utf-8");
         
     if(signing)
     {
-        payload.AddPair({"X-BAPI-RECV-WINDOW", std::to_string(recvWindow)});
-        payload.AddPair({"X-BAPI-TIMESTAMP", std::to_string(epoch)});
-
-        std::string content = payload.content;
+        std::string content = postData.empty() ? payload.content: postData;
         std::string signature = AuthUtils::GetSignature(
             configs["apisecret"].asString(), content);
             
-        payload.AddPair({"X-BAPI-SIGN", signature});
+        headers.emplace("X-BAPI-SIGN", signature);
     }
 }
 
@@ -638,7 +637,7 @@ IntStrPair Bybit::HttpPost(const Json::Value& configs,
     if(r.status_code == 403)
         IP_LIMIT_COUNT = REQUEST_LIMIT.load();
 
-    LOG_IF(INFO, verbose > 1) << "POST: " 
+    LOG_IF(INFO, verbose > 1)
         << "POST: " << baseurl + url << "?" 
         << cpr::Body(dataPost) << "\n"
         << r.status_code 
@@ -994,7 +993,7 @@ bool Bybit::BuildNewOrder(const Json::Value &params, cpr::Payload& payload)
                 if(params.get("reduceOnly", false).asBool())
                     payload.AddPair({"reduceOnly", "true"});
 
-                payload.AddPair({"quantity", ssq.str()});
+                payload.AddPair({"qty", ssq.str()});
             }
 
             std::string timeInForce = params.get("timeInForce","GTC").asString(); 
@@ -1081,14 +1080,14 @@ bool Bybit::BuildNewOrder(const Json::Value &params, Json::Value& payload)
 
             if(params.get("closePosition", false).asBool())
             {
-                payload["closePosition"] = "true";
+                payload["closePosition"] = 1;
             }
             else
             {
                 if(params.get("reduceOnly", false).asBool())
-                    payload["reduceOnly"] = "true";
+                    payload["reduceOnly"] = 1;
 
-                payload["quantity"] = ssq.str();
+                payload["qty"] = ssq.str();
             }
 
             std::string timeInForce = params.get("timeInForce","GTC").asString(); 
@@ -1125,12 +1124,18 @@ OrderData Bybit::NewSpotOrder(const Json::Value& params, bool isdummy)
         
         cpr::Header headers{};
         cpr::Payload payload{};
-        std::string postData; 
-        if(!BuildNewOrder(params, payload))
+        Json::Value order;
+
+        if(!BuildNewOrder(params, order))
         {
             LOG_IF(WARNING, verbose > 2) << "NewSpotOrder failed!";
             return ordData;
         }
+
+        Json::StreamWriterBuilder builder;
+        builder["indentation"] = "";
+        std::string postData(Json::writeString(builder, order));
+
         auto response = HttpPost(connParams, ordData.assetClass, querypath,
                                 payload, postData, headers, true, privacy);
         if(response.first != 200)
@@ -1163,12 +1168,18 @@ OrderData Bybit::NewPerpetualOrder(const Json::Value& params, bool isdummy)
         
         cpr::Header headers{};
         cpr::Payload payload{};
-        std::string postData; 
-        if(!BuildNewOrder(params, payload))
+        Json::Value order;
+        
+        if(!BuildNewOrder(params, order))
         {
             LOG_IF(WARNING, verbose > 2) << "NewPerpetualOrder failed!";
             return ordData;
         }
+
+        Json::StreamWriterBuilder builder;
+        builder["indentation"] = "";
+        std::string postData(Json::writeString(builder, order));
+
         auto response = HttpPost(connParams, ordData.assetClass, querypath, 
                                 payload, postData, headers, true, privacy);
         if(response.first != 200)
@@ -1652,18 +1663,18 @@ void Bybit::TradesParser(const Json::Value& data, const std::string& tag, const 
             const Json::Value& trade = data["data"];
 
             // convert timestamp into date, time and sec
-            pxData.timestamp = trade["t"].asInt64();
+            pxData.timestamp = data["T"].asInt64();
 
             // format date eg: 20190628 12:23:00
             pxData.date = Utils::FormatDate(pxData.timestamp);
             pxData.time = Utils::FormatTime(pxData.timestamp);
 
             // get instrument from topic
-            pxData.instrum = trade["topic"].asString();
+            pxData.instrum = trade["s"].asString();
             pxData.instrum.erase(pxData.instrum.find_last_of('.')+1);
             
             // get tick data transaction info
-            pxData.quantity = std::stod(trade["q"].asString());
+            pxData.quantity = std::stod(trade["v"].asString());
 
             std::stringstream ssprice;
             double price = std::stod(trade["p"].asString());
