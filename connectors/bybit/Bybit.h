@@ -141,6 +141,7 @@ protected:
     
     Json::Value connParams;
     flat_set<Filter> filters;
+    Json::Value paramMapping;
     size_t MAX_BATCH_ORDERS;
 
     std::atomic<long> REQUEST_LIMIT = {100};
