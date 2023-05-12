@@ -152,12 +152,15 @@ int main(int argc, char** argv)
     }
     
     SpinLock tickerLock;
+    SpinLock statsLock;
     bool resetLimitOn = false;
     std::atomic<int64_t> counter = {0};
     std::atomic<int> usedCounter = {0};
     
     std::vector<std::thread> workers;
     flat_set<TickerData> instrumTickers;
+    flat_map<std::string, int64_t> newOrdersTimeMap;
+
     ExecutionManager execManager(capital, riskLimit, verbosity);
     const auto& filters = connector->GetFilters();
 
@@ -228,6 +231,7 @@ int main(int argc, char** argv)
                     // dispatch create order 5 per request
                     boost::asio::dispatch(pool, [&, ticker]()
                     {
+                        auto starttime = std::chrono::system_clock::now();
                         double price = (ticker.bid + iter->stepSize);
                         
                         // create buy open order
@@ -242,9 +246,32 @@ int main(int argc, char** argv)
                         postOrder["quantity"] = (riskAmount / price);
                         
                         OrderData order = connector->NewPerpetualOrder(postOrder);
+#ifdef WITH_PERFORMANCE
+                        if(!order.id.empty())
+                        {
+                            // compute the request time to place new order
+                            auto endtime = std::chrono::system_clock::now();
+                            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(endtime - starttime);
+                            // update statistics map
+                            statsLock.Lock();
+                            std::string ordState = "NEW";
+                            ++execManager.GetStatistics().at(ordState);
+                            ordState.append("_ELAPSED");
+                            execManager.GetStatistics().at(ordState) += elapsed.count();
+
+                            int64_t crttime = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                                endtime.time_since_epoch()).count();
+                            newOrdersTimeMap.insert_or_assign(order.id, crttime);
+                            
+                            statsLock.Unlock();
+                        }
+#endif
                         if(order.IsValid())
+                        {
+                            // update order cache
                             execManager.Update(order, order);
-                        else
+                        }
+                        else if(order.id.empty())
                             execManager.UpdateUsedCapital(-riskAmount);
                         
                         --usedCounter;
@@ -272,6 +299,8 @@ int main(int argc, char** argv)
                             // dispatch create order 5 per request
                             boost::asio::dispatch(pool, [&, ticker, order]()
                             {
+                                auto starttime = std::chrono::system_clock::now();
+
                                 Filter filter;
                                 filter.instrum = ticker.instrum;
                                 auto iter = filters.find(filter);
@@ -289,8 +318,31 @@ int main(int argc, char** argv)
                                 reduceOrder["quantity"] = order.execQuantity;
                                 
                                 OrderData closeOrder = connector->NewPerpetualOrder(reduceOrder);
-                                if(order.IsValid())
+#ifdef WITH_PERFORMANCE
+                                if(!closeOrder.id.empty())
+                                {
+                                    // compute the request time to place new order
+                                    auto endtime = std::chrono::system_clock::now();
+                                    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(endtime - starttime);
+                                    // update statistics map
+                                    statsLock.Lock();
+                                    std::string ordState = "NEW";
+                                    ++execManager.GetStatistics().at(ordState);
+                                    ordState.append("_ELAPSED");
+                                    execManager.GetStatistics().at(ordState) += elapsed.count();
+
+                                    int64_t crttime = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                                        endtime.time_since_epoch()).count();
+                                    newOrdersTimeMap.insert_or_assign(closeOrder.id, crttime);
+                                    
+                                    statsLock.Unlock();
+                                }
+#endif
+                                if(closeOrder.IsValid())
+                                {
+                                    // update orders cache
                                     execManager.Update(closeOrder, order);
+                                }
 
                                // --usedCounter;
                             });
@@ -303,6 +355,8 @@ int main(int argc, char** argv)
                     LOG_IF(WARNING, verbosity > 0) << "Hit Request Limit!";
                     connector->ResetRequestLimitTimer(61000);
                     resetLimitOn = true;
+
+                    execManager.LogBenchmarks();
                 }
                 
                 resetLimitOn = hitRequestLimit;
@@ -329,7 +383,42 @@ int main(int argc, char** argv)
             for(size_t j=0; j < n; ++j)
             {
                 OrderData order(orders[j]);
-                
+                std::string ordState = execManager.GetMappedState(order.state);
+
+#ifdef WITH_PERFORMANCE
+                auto now = std::chrono::system_clock::now();
+                int64_t currtime = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                            now.time_since_epoch()).count();
+                statsLock.Lock();
+                if((ordState == "NEW" || order.state == "Created") && 
+                    newOrdersTimeMap.count(order.id) == 0)
+                {
+                    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::milliseconds(currtime) - std::chrono::milliseconds(order.timestamp));
+
+                    ++execManager.GetStatistics().at(ordState);
+                    ordState.append("_ELAPSED");
+                    execManager.GetStatistics().at(ordState) += elapsed.count();
+                    newOrdersTimeMap.insert_or_assign(order.id, order.timestamp);
+                }
+                else if(ordState == "FILLED" && newOrdersTimeMap.count(order.id))
+                {
+                    auto crttime = newOrdersTimeMap.at(order.id);
+                    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::milliseconds(currtime) - std::chrono::milliseconds(crttime));
+
+                    ++execManager.GetStatistics().at(ordState);
+                    ordState.append("_ELAPSED");
+                    execManager.GetStatistics().at(ordState) += elapsed.count();
+                    newOrdersTimeMap.erase(order.id);
+                }
+                else if(ordState == "CANCLED" || ordState == "EXPIRED" || ordState == "REJECTED")
+                {
+                    newOrdersTimeMap.erase(order.id);
+                }
+                statsLock.Unlock();
+#endif
+
                 execManager.Update(order, order);
                 
                 LOG_IF(INFO, verbosity > 0) << order;

@@ -16,6 +16,16 @@ public:
     ExecutionManager(double maxCapital, double riskPercentage, int verbosity) 
         : capital(maxCapital), riskLimit(riskPercentage), usedCapital(0.0), verbose(verbosity)
     {
+        // benchmarch statistics
+        statistics["NEW"] = {0};
+        statistics["FILLED"] = {0};
+        statistics["CANCELED"] = {0};
+        statistics["REJECTED"] = {0};
+        statistics["EXPIRED"] = {0};
+        statistics["NEW_ELAPSED"] = {0}; // time taken from local and order placed on exchange
+        statistics["FILLED_ELAPSED"] = {0}; // time taken from local and order filled on exchange
+
+        // map order state to method
         dispatcherMap["NEW0"] = (pfunct)&ExecutionManager::UpdateOpeningPosition;
         dispatcherMap["FILLED0"] = (pfunct)&ExecutionManager::UpdateOpenedPosition;
         dispatcherMap["PARTIALLY_FILLED0"] = (pfunct)&ExecutionManager::UpdateOpenedPosition;
@@ -187,6 +197,29 @@ public:
         return state;
     }
 
+    std::unordered_map<std::string,std::atomic<int64_t>>& GetStatistics()
+    {
+        return statistics;
+    }
+
+    void LogBenchmarks()
+    {
+        long newCount = statistics.at("NEW");
+        long filledCount = statistics.at("FILLED");
+        long newElapsed = newCount > 0 ? statistics.at("NEW_ELAPSED") / newCount : 0;
+        long filledElapsed = filledCount > 0 ? statistics.at("FILLED_ELAPSED") / filledCount : 0;
+
+        LOG_IF(INFO, verbose > 0) 
+            << "NEW=" << statistics.at("NEW")
+            << "\tFILLED=" << statistics.at("FILLED")
+            << "\tCANCELED=" << statistics.at("CANCELED")
+            << "\tREJECTED=" << statistics.at("REJECTED")
+            << "\tEXPIRED=" << statistics.at("EXPIRED")
+            << "\tNEW_ELAPSED=" << newElapsed << "ms"
+            << "\tFILLED_ELAPSED=" << filledElapsed << "ms";
+    }
+
+
 protected:
     void UpdateOpeningPosition(const OrderData& order, const OrderData& dummy)
     {
@@ -266,7 +299,7 @@ protected:
         openOrders.erase(order);
         execLock.Unlock();
     }
-
+    
 private:
     int verbose;
     double riskLimit;
@@ -283,6 +316,7 @@ private:
     flat_map<std::string, flat_set<std::string>> positionsOrderIds;
 
     flat_map<std::string,std::string> orderStatusMap;
+    std::unordered_map<std::string,std::atomic<int64_t>> statistics;
 
     // add function to map for each event type to avoid if else
     typedef void (ExecutionManager::*pfunct)(const OrderData& primary, const OrderData& secondary);
