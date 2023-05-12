@@ -1,5 +1,5 @@
 #include "Bybit.h"
-#include "public/LogHelper.h"
+#include <g3log/g3log.hpp>
 #include <boost/iostreams/filtering_streambuf.hpp>
 #include <boost/iostreams/copy.hpp>
 
@@ -45,8 +45,11 @@ Bybit::~Bybit()
         worker.join();
 }
 
-void Bybit::Init(const Json::Value& params, int logLevel)
+void Bybit::Init(const Json::Value& params, int logLevel, g3::LogWorker* logWorker)
 {
+    if(logWorker != nullptr)
+        g3::initializeLogging(logWorker);
+        
     connParams = params;
     verbose = logLevel;
         
@@ -65,8 +68,6 @@ void Bybit::Init(const Json::Value& params, int logLevel)
     int numSession = connParams.get("numSessions", 4).asInt();
     for(int i=0; i < numSession; ++i)
         sessionPool.enqueue(std::make_shared<cpr::Session>());
-
-    InitializeLogger();
 
     for(const Json::Value& item: connParams["websocket"]["private"]["subscribe"])
     {

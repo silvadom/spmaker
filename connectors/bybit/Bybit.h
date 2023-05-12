@@ -16,7 +16,7 @@ public:
     Bybit();
     virtual ~Bybit();
 
-    void Init(const Json::Value& params, int logLevel) override;
+    void Init(const Json::Value& params, int logLevel, g3::LogWorker* logWorker) override;
     void Close() override;
     void Stop() override;
     void Reconnect() override;

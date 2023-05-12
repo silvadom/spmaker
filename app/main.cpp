@@ -143,7 +143,7 @@ int main(int argc, char** argv)
 
     // Initiliaze connector
     LOG(INFO) << "Initializing...";
-    connector->Init(connParams[exchange], verbosity);
+    connector->Init(connParams[exchange], verbosity, logworker.get());
     if(!connector->IsInitialized())
     {
         LOG(WARNING) << "Failed to Initialize connector";

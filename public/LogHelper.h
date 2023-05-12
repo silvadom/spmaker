@@ -4,7 +4,7 @@
 namespace fs = std::filesystem;
 
 // global g3log pointer
-std::unique_ptr<LogWorker> logworker;
+std::unique_ptr<g3::LogWorker> logworker = nullptr;
 std::unique_ptr<g3::SinkHandle<CustomSink>> sinkHandle = nullptr;
 std::unique_ptr<FileSinkHandle> defaultHandler = nullptr;
 
