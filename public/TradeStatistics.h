@@ -83,7 +83,7 @@ public:
             newOrdersTimeMap.erase(order.id);
             partialFilledOrders.erase(order.id);
         }
-        else if(ordState == "CANCLED" || ordState == "EXPIRED" || ordState == "REJECTED")
+        else if(ordState == "CANCELED" || ordState == "EXPIRED" || ordState == "REJECTED")
         {
             ++statistics.at(ordState);
             newOrdersTimeMap.erase(order.id);
