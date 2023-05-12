@@ -96,12 +96,21 @@ int main(int argc, char** argv)
     bool success = false;
     std::string err;
     std::string filename("../modules/");
-    filename.append(exchange);
 #if defined(_WIN32) || defined(_WIN64)
+    filename.append(exchange);
     filename.append(".dll");
 #elif defined(__linux__)
+    filename.append("lib").append(exchange);
     filename.append(".so");
 #endif
+
+    if(fs::exists(filename))
+    {
+        LOG(WARNING) << "Failed to load "<< filename;
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+        _Exit(EXIT_FAILURE);
+    }
+
     std::string MODULE_PATH = fs::canonical(filename).string();
     std::string CONFIG_PATH = fs::canonical(std::string("../configs/connector.config")).string();
 
