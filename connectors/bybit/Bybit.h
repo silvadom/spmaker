@@ -142,8 +142,8 @@ protected:
     Json::Value connParams;
     flat_set<Filter> filters;
     Json::Value paramMapping;
+    
     size_t MAX_BATCH_ORDERS;
-
     std::atomic<long> REQUEST_LIMIT = {100};
     std::atomic<long> IP_LIMIT_COUNT = ATOMIC_FLAG_INIT;
     std::atomic<long> ORDER_LIMIT_COUNT = ATOMIC_FLAG_INIT;

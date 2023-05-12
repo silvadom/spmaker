@@ -1102,12 +1102,12 @@ bool Bybit::BuildNewOrder(const Json::Value &params, Json::Value& payload)
 
             if(params.get("closePosition", false).asBool())
             {
-                payload["closePosition"] = 1;
+                payload["closePosition"] = true;
             }
             else
             {
                 if(params.get("reduceOnly", false).asBool())
-                    payload["reduceOnly"] = 1;
+                    payload["reduceOnly"] = true;
 
                 payload["qty"] = ssq.str();
             }
@@ -1357,11 +1357,13 @@ flat_set<OrderData> Bybit::GetPerpetualOpenOrders()
 
     try
     {
-        std::string querypath("contract/v3/private/order/unfilled-orders");
+        std::string querypath("contract/v3/private/order/list");
 
         cpr::Header headers{};
         cpr::Payload payload{};
         std::string postData;
+
+        payload.AddPair({"orderStatus","Active"});
 
         auto response = HttpGet(connParams, assetClass, querypath, 
                                 payload, postData, headers, true, privacy);
