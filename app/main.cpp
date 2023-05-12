@@ -104,7 +104,7 @@ int main(int argc, char** argv)
     filename.append(".so");
 #endif
 
-    if(fs::exists(filename))
+    if(!fs::exists(filename))
     {
         LOG(WARNING) << "Failed to load "<< filename;
         std::this_thread::sleep_for(std::chrono::seconds(2));
