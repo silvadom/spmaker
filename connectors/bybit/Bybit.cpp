@@ -1904,6 +1904,15 @@ OrderData Bybit::OrdersParserGet(const std::string& msg, const std::string& tag)
 
     if(reader->parse(msg.c_str(), msg.c_str() + msg.size(),&records, &errs) && records["retCode"].asInt() == 0)
     {
+        if(records.isMember("result") && records["result"].isMember("orderId"))
+        {
+            ordData.id = records["result"].get("orderId","").asString();
+            ordData.lid = records["result"].get("orderLinkId","").asString();
+            ordData.timestamp = std::stoll(records.get("time","0").asString());
+
+            return ordData;
+        }
+
         for(const Json::Value& order: records["list"])
         {
             ordData.instrum = order.get("symbol", "").asString();
