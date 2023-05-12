@@ -8,6 +8,7 @@
 #include "public/LogHelper.h"
 #include "public/JsonHelper.h"
 #include "public/SpinLock.h"
+#include "public/TradeStatistics.h"
 
 namespace fs = std::filesystem;
 namespace po = boost::program_options;
@@ -152,7 +153,6 @@ int main(int argc, char** argv)
     }
     
     SpinLock tickerLock;
-    SpinLock statsLock;
     bool resetLimitOn = false;
     std::atomic<int64_t> counter = {0};
     std::atomic<int> usedCounter = {0};
@@ -161,6 +161,7 @@ int main(int argc, char** argv)
     flat_set<TickerData> instrumTickers;
     flat_map<std::string, int64_t> newOrdersTimeMap;
 
+    TradeStats tradeStats;
     ExecutionManager execManager(capital, riskLimit, verbosity);
     const auto& filters = connector->GetFilters();
 
@@ -247,24 +248,7 @@ int main(int argc, char** argv)
                         
                         OrderData order = connector->NewPerpetualOrder(postOrder);
 #ifdef WITH_PERFORMANCE
-                        if(!order.id.empty())
-                        {
-                            // compute the request time to place new order
-                            auto endtime = std::chrono::system_clock::now();
-                            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(endtime - starttime);
-                            // update statistics map
-                            statsLock.Lock();
-                            std::string ordState = "NEW";
-                            ++execManager.GetStatistics().at(ordState);
-                            ordState.append("_ELAPSED");
-                            execManager.GetStatistics().at(ordState) += elapsed.count();
-
-                            int64_t crttime = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                                                endtime.time_since_epoch()).count();
-                            newOrdersTimeMap.insert_or_assign(order.id, crttime);
-                            
-                            statsLock.Unlock();
-                        }
+                        tradeStats.UpdateNewOrderStats(order, starttime);
 #endif
                         if(order.IsValid())
                         {
@@ -319,24 +303,7 @@ int main(int argc, char** argv)
                                 
                                 OrderData closeOrder = connector->NewPerpetualOrder(reduceOrder);
 #ifdef WITH_PERFORMANCE
-                                if(!closeOrder.id.empty())
-                                {
-                                    // compute the request time to place new order
-                                    auto endtime = std::chrono::system_clock::now();
-                                    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(endtime - starttime);
-                                    // update statistics map
-                                    statsLock.Lock();
-                                    std::string ordState = "NEW";
-                                    ++execManager.GetStatistics().at(ordState);
-                                    ordState.append("_ELAPSED");
-                                    execManager.GetStatistics().at(ordState) += elapsed.count();
-
-                                    int64_t crttime = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                                                        endtime.time_since_epoch()).count();
-                                    newOrdersTimeMap.insert_or_assign(closeOrder.id, crttime);
-                                    
-                                    statsLock.Unlock();
-                                }
+                                tradeStats.UpdateNewOrderStats(order, starttime);
 #endif
                                 if(closeOrder.IsValid())
                                 {
@@ -356,7 +323,7 @@ int main(int argc, char** argv)
                     connector->ResetRequestLimitTimer(61000);
                     resetLimitOn = true;
 
-                    execManager.LogBenchmarks();
+                    tradeStats.LogBenchmarks();
                 }
                 
                 resetLimitOn = hitRequestLimit;
@@ -383,40 +350,10 @@ int main(int argc, char** argv)
             for(size_t j=0; j < n; ++j)
             {
                 OrderData order(orders[j]);
-                std::string ordState = execManager.GetMappedState(order.state);
-
+                
 #ifdef WITH_PERFORMANCE
-                auto now = std::chrono::system_clock::now();
-                int64_t currtime = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                                            now.time_since_epoch()).count();
-                statsLock.Lock();
-                if((ordState == "NEW" || order.state == "Created") && 
-                    newOrdersTimeMap.count(order.id) == 0)
-                {
-                    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        std::chrono::milliseconds(currtime) - std::chrono::milliseconds(order.timestamp));
-
-                    ++execManager.GetStatistics().at(ordState);
-                    ordState.append("_ELAPSED");
-                    execManager.GetStatistics().at(ordState) += elapsed.count();
-                    newOrdersTimeMap.insert_or_assign(order.id, order.timestamp);
-                }
-                else if(ordState == "FILLED" && newOrdersTimeMap.count(order.id))
-                {
-                    auto crttime = newOrdersTimeMap.at(order.id);
-                    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        std::chrono::milliseconds(currtime) - std::chrono::milliseconds(crttime));
-
-                    ++execManager.GetStatistics().at(ordState);
-                    ordState.append("_ELAPSED");
-                    execManager.GetStatistics().at(ordState) += elapsed.count();
-                    newOrdersTimeMap.erase(order.id);
-                }
-                else if(ordState == "CANCLED" || ordState == "EXPIRED" || ordState == "REJECTED")
-                {
-                    newOrdersTimeMap.erase(order.id);
-                }
-                statsLock.Unlock();
+                std::string ordState = execManager.GetMappedState(order.state);
+                tradeStats.UpdateOrderStats(order, ordState);
 #endif
 
                 execManager.Update(order, order);
