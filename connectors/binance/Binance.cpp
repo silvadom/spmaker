@@ -150,8 +150,13 @@ void Binance::TestConnectivity()
             connHdlPtr = item.second;
     }
 
-    if(connHdlPtr == nullptr)
+    if(connHdlPtr == nullptr && connHdlPtrsMap.size() > 0)
         connHdlPtr = connHdlPtrsMap.begin()->second;
+    else
+    {
+        LOG(INFO) << "No connection available!";
+        return;
+    }
 
     size_t i = 0;
     size_t pingCount = 100;
