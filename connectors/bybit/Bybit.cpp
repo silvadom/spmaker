@@ -1727,17 +1727,22 @@ void Bybit::CandlesParser(const Json::Value& data, const std::string& tag, const
 
             const Json::Value& kline = data["data"];
 
+            std::string instrum = data.get("topic", "").asString();
+            size_t pos = instrum.find_last_of('.');
+            if(pos != instrum.npos)
+                instrum = instrum.substr(pos+1);
+
             // convert timestamp into date, time and sec
-            candle.timestamp = kline["t"].asInt64();
+            candle.timestamp = kline["start"].asInt64();
             candle.date = Utils::FormatDate(candle.timestamp);
             candle.time = Utils::FormatTime(candle.timestamp);
 
-            candle.instrum = kline["s"].asString();
-            candle.open = std::stod(kline["o"].asString());
-            candle.high = std::stod(kline["h"].asString());
-            candle.low = std::stod(kline["l"].asString());
-            candle.close = std::stod(kline["c"].asString());
-            candle.volume = std::stod(kline["v"].asString());
+            candle.instrum = instrum;
+            candle.open = std::stod(kline["open"].asString());
+            candle.high = std::stod(kline["high"].asString());
+            candle.low = std::stod(kline["low"].asString());
+            candle.close = std::stod(kline["close"].asString());
+            candle.volume = std::stod(kline["volume"].asString());
 
             candleQueue->enqueue(candle);
         }
@@ -1914,7 +1919,9 @@ OrderData Bybit::OrdersParserGet(const std::string& msg, const std::string& tag)
             ordData.execQuantity = std::stod(order.get("cumExecQty", "0.0").asString());
             ordData.timeInForce = order.get("timeInForce", "GTC").asString();
             ordData.closePosition = order.get("reduceOnly", 0).asBool();
-            ordData.posSide = order.get("posSide", "BOTH").asString();
+
+            int edgeMode = order.get("positionIdx",0).asInt();
+            ordData.posSide = edgeModesMap.at(edgeMode);
 
             ordData.date = Utils::FormatDatetime(ordData.timestamp);
 
@@ -1958,7 +1965,7 @@ flat_set<OrderData> Bybit::BatchOrdersParserGet(const std::string& msg, const st
             ordData.lid = order.get("orderLinkId","").asString();
             ordData.local = false;
             
-            ordData.timestamp = std::stol(order.get("createdTime","0").asString());
+            ordData.timestamp = std::stoll(order.get("createdTime","0").asString());
             ordData.side = order.get("side","").asString();
             ordData.orderType = order.get("orderType","LIMIT").asString();
             ordData.price = std::stod(order.get("price", "0.0").asString());
@@ -1967,7 +1974,9 @@ flat_set<OrderData> Bybit::BatchOrdersParserGet(const std::string& msg, const st
             ordData.execQuantity = std::stod(order.get("cumExecQty", "0.0").asString());
             ordData.timeInForce = order.get("timeInForce", "GTC").asString();
             ordData.closePosition = order.get("reduceOnly", 0).asBool();
-            ordData.posSide = order.get("posSide", "BOTH").asString();
+
+            int edgeMode = order.get("positionIdx",0).asInt();
+            ordData.posSide = edgeModesMap.at(edgeMode);
 
             ordData.date = Utils::FormatDatetime(ordData.timestamp);
 
