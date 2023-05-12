@@ -163,13 +163,15 @@ void Binance::TestConnectivity()
     std::vector<std::pair<int64_t,int64_t>> timeTracker;
     timeTracker.reserve(pingCount);
 
-    while(!exitThread && connHdlPtr && i < pingCount)
+    while(!exitThread && connHdlPtr && i < (pingCount + 2))
     {
         int64_t pingSendTime = Utils::GetMilliseconds();
         endpoint.ping(connHdlPtr->GetHandler(), "0x9");
 
         while(connHdlPtr->GetPongRecvTime() < pingSendTime);
-        timeTracker.emplace_back(pingSendTime, connHdlPtr->GetPongRecvTime().load());   
+
+        if(i < 2) // skip first two pings
+            timeTracker.emplace_back(pingSendTime, connHdlPtr->GetPongRecvTime().load()); 
         ++i;
     }
 
