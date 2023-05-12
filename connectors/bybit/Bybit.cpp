@@ -47,9 +47,10 @@ Bybit::~Bybit()
 
 void Bybit::Init(const Json::Value& params, int logLevel, g3::LogWorker* logWorker)
 {
+#if defined(__linux__)
     if(logWorker != nullptr)
         g3::initializeLogging(logWorker);
-        
+#endif 
     connParams = params;
     verbose = logLevel;
         
