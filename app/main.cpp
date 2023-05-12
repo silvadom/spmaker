@@ -159,7 +159,6 @@ int main(int argc, char** argv)
     std::vector<std::thread> workers;
     flat_set<TickerData> instrumTickers;
     ExecutionManager execManager(capital, riskLimit, verbosity);
-
     const auto& filters = connector->GetFilters();
 
     // check if need to subscribe all symbols
@@ -361,7 +360,8 @@ int main(int argc, char** argv)
                     std::chrono::milliseconds(epoch) - std::chrono::milliseconds(order.timestamp));
 
                 bool cancelRequest = execManager.IsCancelRequested(order);
-                if(!cancelRequest && order.state == "NEW" && elapsed.count() > ORDER_TIMEOUT)
+                std::string orderState = execManager.GetMappedState(order.state);
+                if(!cancelRequest && orderState == "NEW" && elapsed.count() > ORDER_TIMEOUT)
                 {
                     execManager.CancelRequest(order);
 
@@ -379,9 +379,7 @@ int main(int argc, char** argv)
                         execManager.ClearCancelRequest(order);
                     });
                 }
-                else if(order.state == "FILLED" || 
-                    order.state == "CANCELED" || 
-                    order.state == "EXPIRED")
+                else if(orderState == "FILLED" || orderState == "CANCELED" || orderState == "EXPIRED")
                 {
                     execManager.Update(order, order);
                 }
