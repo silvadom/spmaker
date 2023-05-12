@@ -361,7 +361,9 @@ int main(int argc, char** argv)
 
                 bool cancelRequest = execManager.IsCancelRequested(order);
                 std::string orderState = execManager.GetMappedState(order.state);
-                if(!cancelRequest && orderState == "NEW" && elapsed.count() > ORDER_TIMEOUT)
+                if(!cancelRequest && orderState == "NEW" && 
+                    elapsed.count() > ORDER_TIMEOUT && 
+                    !connector->IsRequestLimitHit())
                 {
                     execManager.CancelRequest(order);
 
