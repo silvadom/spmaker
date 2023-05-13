@@ -97,11 +97,9 @@ int main(int argc, char** argv)
     std::string err;
     std::string filename("../modules/");
 #if defined(_WIN32) || defined(_WIN64)
-    filename.append(exchange);
-    filename.append(".dll");
+    filename.append(exchange).append(".dll");
 #elif defined(__linux__)
-    filename.append("lib").append(exchange);
-    filename.append(".so");
+    filename.append("lib").append(exchange).append(".so");
 #endif
 
     if(!fs::exists(filename))
