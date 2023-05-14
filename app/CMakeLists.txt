@@ -128,13 +128,15 @@ install(DIRECTORY DESTINATION ${MODULE_DIR})
 if(UNIX)
     set(TARGET_FILE ${EXECUTABLE_DIR}/${TARGET})
     file(GLOB TARGET_MODULES
-        ${SRC_MODULE_DIR}/*.so
+        ${MODULE_DIR}/*.so
     )
+    list(APPEND TARGET_MODULES ${TARGET_FILE})
 elseif(WIN32)
     set(TARGET_FILE ${EXECUTABLE_DIR}/${TARGET}.exe)
     file(GLOB TARGET_MODULES
-        ${SRC_MODULE_DIR}/*.dll
+        ${MODULE_DIR}/*.dll
     )
+    list(APPEND TARGET_MODULES ${TARGET_FILE})
 endif()
 
 # Transfer the value of ${MY_DEPENDENCY_PATHS} into the install script
@@ -146,7 +148,8 @@ install(CODE "set(TARGET_MODULES \"${TARGET_MODULES}\")")
 
 install(CODE "
     file(GET_RUNTIME_DEPENDENCIES
-        EXECUTABLES ${TARGET_MODULES}
+        EXECUTABLES ${TARGET_MODULES} 
+        CONFLICTING_DEPENDENCIES_PREFIX _c_deps
         RESOLVED_DEPENDENCIES_VAR _r_deps
         UNRESOLVED_DEPENDENCIES_VAR _u_deps
         DIRECTORIES ${MY_DEPENDENCY_PATHS}
