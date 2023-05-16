@@ -1,5 +1,5 @@
 #include <filesystem>
-#include "G3LogCustomSink.h"
+#include "public/G3LogCustomSink.h"
 
 namespace fs = std::filesystem;
 
