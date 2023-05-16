@@ -24,6 +24,7 @@ public:
         instrum = other.instrum;
         date = other.date;
         time = other.time;
+        lid = lid;
     }
 
     PriceData& operator=(const PriceData& other)
@@ -39,6 +40,7 @@ public:
         instrum = other.instrum;
         date = other.date;
         time = other.time;
+        lid = lid;
 
         return *this;
     }
@@ -56,8 +58,29 @@ public:
         instrum = std::move(other.instrum);
         date = std::move(other.date);
         time = std::move(other.time);
+        lid = std::move(other.lid);
 
         return *this;
+    }
+
+    bool operator< (const PriceData& other) const
+    {
+        return (lid.compare(other.lid) < 0);
+    }
+
+    bool operator== (const PriceData& other) const
+    {
+        return (lid.compare(other.lid) == 0);
+    }
+
+    /**
+     * this need to be called after assign params
+    */
+    void UpdateLocalId()
+    {
+        std::ostringstream oss;
+        oss << exchange << assetClass << instrum << timestamp;
+        lid = std::to_string(std::hash<std::string>{}(oss.str()));
     }
 
     double price;
@@ -68,6 +91,7 @@ public:
     std::string instrum;
     std::string date;
     std::string time;
+    std::string lid; // helpful when insert data into set
 
     friend std::ostream & operator<<(std::ostream &out, const PriceData& priceData);
 };
