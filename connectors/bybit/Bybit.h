@@ -2,7 +2,7 @@
 
 #include "public/IExchange.h"
 #include "public/ConnHandler.h"
-#include "public/AuthUtils.h"
+#include "public/utils/AuthUtils.h"
 
 namespace stelgic
 {

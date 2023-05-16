@@ -5,8 +5,8 @@
 #include "public/IExchange.h"
 #include "public/ExecutionManager.h"
 #include "public/ModuleLoader.h"
-#include "public/LogHelper.h"
-#include "public/JsonHelper.h"
+#include "public/utils/LogHelper.h"
+#include "public/utils/JsonHelper.h"
 #include "public/SpinLock.h"
 #include "public/TradeStatistics.h"
 
@@ -255,7 +255,7 @@ int main(int argc, char** argv)
                         postOrder["quantity"] = (riskAmount / price);
                         
                         OrderData order = connector->NewPerpetualOrder(postOrder);
-#ifdef WITH_PERFORMANCE
+#ifdef WITH_STATS
                         tradeStats.UpdateNewOrderStats(order, starttime);
 #endif
                         if(order.IsValid())
@@ -310,7 +310,7 @@ int main(int argc, char** argv)
                                 reduceOrder["quantity"] = order.execQuantity;
                                 
                                 OrderData closeOrder = connector->NewPerpetualOrder(reduceOrder);
-#ifdef WITH_PERFORMANCE
+#ifdef WITH_STATS
                                 tradeStats.UpdateNewOrderStats(closeOrder, starttime);
 #endif
                                 if(closeOrder.IsValid())
@@ -359,7 +359,7 @@ int main(int argc, char** argv)
             {
                 OrderData order(orders[j]);
                 
-#ifdef WITH_PERFORMANCE
+#ifdef WITH_STATS
                 std::string ordState = execManager.GetMappedState(order.state);
                 tradeStats.UpdateOrderStats(order, ordState);
 #endif
